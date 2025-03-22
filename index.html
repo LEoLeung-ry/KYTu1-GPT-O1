@@ -1,11 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <body>
-  <h1>测试文本</h1>
-  <!-- 这里再放你的脚本 -->
-</body>
-
   <meta charset="UTF-8" />
   <title>宽表->长表 + 分组 + 环比同比 (优化版)</title>
   <!-- 1. Papa Parse (解析CSV) -->
@@ -99,7 +94,11 @@
     }
   </style>
 </head>
+
 <body>
+  <!-- 测试文本：如果页面能正常显示，这行就会出现 -->
+  <h1>测试文本</h1>
+
   <!-- 侧边栏按钮 -->
   <button class="sidebar-toggle" id="toggleSidebar">≡</button>
 
@@ -153,9 +152,6 @@
 
     /***************************************************************
      * 3. 宽表 => 长表
-     *    rowGroup = rawData[0]  (第1行=group)
-     *    rowKeyword= rawData[1] (第2行=keyword)
-     *    row3+ => fileName + values
      ***************************************************************/
     function convertWideToLong(rawData) {
       const rowGroup   = rawData[0];
@@ -227,9 +223,6 @@
 
     /***************************************************************
      * 5. 构造Chart
-     *    - Y 轴正常(非reverse), beginAtZero or自动
-     *    - Tooltip显示环比/同比
-     *    - 字体变大
      ***************************************************************/
     function createChart(weeks, dsList) {
       const ctx = document.getElementById("myChart").getContext("2d");
@@ -259,21 +252,19 @@
           scales: {
             x: {
               title: { display: true, text: "周" },
-              // 让刻度更可见
               ticks: {
                 autoSkip: false,
                 maxRotation: 45,
                 minRotation: 45,
-                color: "#333",               // 文字颜色
-                font: { size: 14 }           // 字体大小
+                color: "#333",
+                font: { size: 14 }
               },
               grid: {
-                color: "#ccc",               // 网格线颜色
+                color: "#ccc",
                 drawOnChartArea: true
               }
             },
             y: {
-              // 不再 reverse:true, 让最小值在底部
               beginAtZero: false,
               ticks: {
                 color: "#333",
@@ -434,7 +425,6 @@
 
     /***************************************************************
      * 7. 时间筛选
-     *    把 _Week_ -> ' W' 
      ***************************************************************/
     function displayWeekName(orig){
       // e.g. "2023_10_15-10_21_Week_0" => "2023_10_15-10_21 W0"
@@ -537,7 +527,6 @@
 
     // run on load
     main();
-
   </script>
 </body>
 </html>
