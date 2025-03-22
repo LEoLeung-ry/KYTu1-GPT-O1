@@ -10,11 +10,13 @@
 
   <style>
     html, body {
-      margin:0; padding:0;
-      height:100%;
+      margin: 0; 
+      padding: 0;
+      height: 100%;
       font-family: sans-serif;
-      /* 避免出现双滚动条，可根据需要修改 */
-      overflow:hidden;
+      /* 为避免出现双重滚动，可根据需求自行设置：
+         如果想在页面里只滚动图表区域，可以保留 overflow:hidden */
+      overflow: hidden;
     }
 
     /* 左上角侧边栏按钮 */
@@ -28,6 +30,7 @@
       cursor: pointer;
       z-index: 9999;
     }
+
     /* 侧边栏 */
     .sidebar {
       position: fixed;
@@ -86,14 +89,15 @@
       gap: 6px;
       flex-shrink: 0;
     }
+
+    /* 让图表容器可滚动 */
     .chart-container {
-      /* 允许出现滚动条 */
       flex: 1;
       position: relative;
-      overflow: auto;
+      overflow: auto;  /* 关键：允许出现滚动条 */
     }
     #myChart {
-      /* 设置一个较大的最小宽高，使得如果数据很多，就会出现滚动条 */
+      /* 设置最小宽度/高度，如果数据非常多，可以再加大 */
       min-width: 1200px;
       min-height: 600px;
     }
@@ -132,7 +136,7 @@
 
   <script>
     /***************************************************************
-     * 1. 配置：CSV链接
+     * 1. 配置：CSV链接 (请替换成你自己的 CSV 链接, 如有需要)
      ***************************************************************/
     const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTxT7pk3XLnPr87Fpq2Fii90bqh_R2jsCjO6e3dZkMLKmuw75ksYiuSce3DC7uUK5IXBEFmeKT1P7oJ/pub?output=csv";
 
@@ -210,7 +214,7 @@
         gData[g][k][idx] = v;
       });
 
-      // 按字母顺序排序 groupName / keyword
+      // 对 groupName / keyword 做排序
       const sorted = {};
       Object.keys(gData).sort().forEach(gName => {
         const kwMap = gData[gName];
@@ -225,7 +229,7 @@
     }
 
     /***************************************************************
-     * 5. 构造Chart
+     * 5. 构造Chart (注意 y.reverse = true)
      ***************************************************************/
     function createChart(weeks, dsList) {
       const ctx = document.getElementById("myChart").getContext("2d");
@@ -268,14 +272,14 @@
               }
             },
             y: {
-              // 让数值小在上方, 数值大在下方
+              /* 关键: 让数值小在上方, 大在下方 */
               reverse: true,
-              // 可决定是否从0开始
-              // beginAtZero: true,
+              // 若想从 0 开始，可加: beginAtZero: true,
               ticks: {
                 color: "#333",
                 font: { size: 14 },
                 callback: function(value) {
+                  // 大于1000时显示k缩写
                   if (value >= 1000) return (value/1000)+"k";
                   return value;
                 }
