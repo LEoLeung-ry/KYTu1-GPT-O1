@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8" />
-  <title>宽表->长表 + 分组 + 环比同比 (优化版)</title>
+  <title>KeyWord热度</title>
   <!-- 1. Papa Parse (解析CSV) -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
   <!-- 2. Chart.js -->
@@ -13,8 +13,10 @@
       margin:0; padding:0;
       height:100%;
       font-family: sans-serif;
+      /* 避免出现双滚动条，可根据需要修改 */
       overflow:hidden;
     }
+
     /* 左上角侧边栏按钮 */
     .sidebar-toggle {
       position: fixed;
@@ -85,20 +87,20 @@
       flex-shrink: 0;
     }
     .chart-container {
+      /* 允许出现滚动条 */
       flex: 1;
       position: relative;
+      overflow: auto;
     }
     #myChart {
-      width: 100%;
-      height: 100%;
+      /* 设置一个较大的最小宽高，使得如果数据很多，就会出现滚动条 */
+      min-width: 1200px;
+      min-height: 600px;
     }
   </style>
 </head>
 
 <body>
-  <!-- 测试文本：如果页面能正常显示，这行就会出现 -->
-  <h1>测试文本</h1>
-
   <!-- 侧边栏按钮 -->
   <button class="sidebar-toggle" id="toggleSidebar">≡</button>
 
@@ -114,7 +116,8 @@
 
   <div class="main-area">
     <div class="topbar">
-      <h1 style="margin:0; flex:1;">宽表→长表 + 分组 + 环比同比 (优化版)</h1>
+      <!-- 标题改为“KeyWord热度” -->
+      <h1 style="margin:0; flex:1;">KeyWord热度</h1>
       <button id="btnRefresh">刷新数据</button>
       <label>开始周:</label>
       <select id="startWeek"></select>
@@ -207,7 +210,7 @@
         gData[g][k][idx] = v;
       });
 
-      // 让 groupName / keyword 排序
+      // 按字母顺序排序 groupName / keyword
       const sorted = {};
       Object.keys(gData).sort().forEach(gName => {
         const kwMap = gData[gName];
@@ -265,7 +268,10 @@
               }
             },
             y: {
-              beginAtZero: false,
+              // 让数值小在上方, 数值大在下方
+              reverse: true,
+              // 可决定是否从0开始
+              // beginAtZero: true,
               ticks: {
                 color: "#333",
                 font: { size: 14 },
