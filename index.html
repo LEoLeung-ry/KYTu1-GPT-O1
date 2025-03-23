@@ -2,27 +2,25 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8" />
-  <title>KeyWord热度</title>
-  <!-- 1. Papa Parse (解析CSV) -->
+  <title>宽表->长表 + 分组 + 环比同比 (可视化优化版)</title>
+  <!-- Papa Parse -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
-  <!-- 2. Chart.js -->
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.2.1"></script>
 
   <style>
     html, body {
-      margin: 0; 
+      margin: 0;
       padding: 0;
       height: 100%;
       font-family: sans-serif;
-      /* 为避免出现双重滚动，可根据需求自行设置：
-         如果想在页面里只滚动图表区域，可以保留 overflow:hidden */
-      overflow: hidden;
+      overflow: hidden; /* 可根据需要改成 scroll */
     }
-
-    /* 左上角侧边栏按钮 */
+    /* 侧边栏按钮 */
     .sidebar-toggle {
       position: fixed;
-      left: 0; top: 0;
+      left: 0; 
+      top: 0;
       background: #3b5998;
       color: #fff;
       padding: 8px 12px;
@@ -30,11 +28,11 @@
       cursor: pointer;
       z-index: 9999;
     }
-
     /* 侧边栏 */
     .sidebar {
       position: fixed;
-      left: 0; top: 0;
+      left: 0;
+      top: 0;
       width: 280px;
       height: 100vh;
       background: #fafafa;
@@ -75,6 +73,7 @@
       margin-left: 8px;
     }
 
+    /* 主区域 */
     .main-area {
       margin-left: 60px;
       display: flex;
@@ -89,17 +88,13 @@
       gap: 6px;
       flex-shrink: 0;
     }
-
-    /* 让图表容器可滚动 */
     .chart-container {
       flex: 1;
       position: relative;
-      overflow: auto;  /* 关键：允许出现滚动条 */
     }
     #myChart {
-      /* 设置最小宽度/高度，如果数据非常多，可以再加大 */
-      min-width: 1200px;
-      min-height: 600px;
+      width: 100%;
+      height: 100%;
     }
   </style>
 </head>
@@ -120,8 +115,7 @@
 
   <div class="main-area">
     <div class="topbar">
-      <!-- 标题改为“KeyWord热度” -->
-      <h1 style="margin:0; flex:1;">KeyWord热度</h1>
+      <h1 style="margin:0; flex:1;">宽表→长表 + 分组 + 环比同比 (优化版)</h1>
       <button id="btnRefresh">刷新数据</button>
       <label>开始周:</label>
       <select id="startWeek"></select>
@@ -136,16 +130,17 @@
 
   <script>
     /***************************************************************
-     * 1. 配置：CSV链接 (请替换成你自己的 CSV 链接, 如有需要)
+     * 1. 配置：CSV链接 (宽表)
      ***************************************************************/
-    const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTxT7pk3XLnPr87Fpq2Fii90bqh_R2jsCjO6e3dZkMLKmuw75ksYiuSce3DC7uUK5IXBEFmeKT1P7oJ/pub?output=csv";
+    const CSV_URL = "https://docs.google.com/spreadsheets/d/e/xxxxx/pub?output=csv"; 
+      // ←请替换为你的表格链接
 
-    let chart;           // chart.js 实例
-    let labelsAll = [];  // weeks
-    let groupsData = {}; // { group => { keyword => [numbers], ...}, ... }
+    let chart;
+    let labelsAll = [];
+    let groupsData = {};
 
     /***************************************************************
-     * 2. 读取“宽表” CSV
+     * 2. 读取宽表 CSV
      ***************************************************************/
     function fetchWideCSV() {
       return new Promise((resolve, reject) => {
@@ -161,6 +156,8 @@
      * 3. 宽表 => 长表
      ***************************************************************/
     function convertWideToLong(rawData) {
+      // row0 => group
+      // row1 => keyword
       const rowGroup   = rawData[0];
       const rowKeyword = rawData[1];
 
@@ -198,7 +195,6 @@
       // groups
       const gData = {};
       const count = weeks.length;
-
       longData.forEach(it => {
         const w  = it["文件名称"];
         const g  = it.group;
@@ -214,22 +210,25 @@
         gData[g][k][idx] = v;
       });
 
-      // 对 groupName / keyword 做排序
-      const sorted = {};
-      Object.keys(gData).sort().forEach(gName => {
-        const kwMap = gData[gName];
-        const sortedKwMap = {};
-        Object.keys(kwMap).sort().forEach(kName => {
-          sortedKwMap[kName] = kwMap[kName];
+      // 排序
+      const sortedGroups = {};
+      Object.keys(gData).sort().forEach(grp => {
+        const kwMap = gData[grp];
+        const sortedKw = {};
+        Object.keys(kwMap).sort().forEach(k => {
+          sortedKw[k] = kwMap[k];
         });
-        sorted[gName] = sortedKwMap;
+        sortedGroups[grp] = sortedKw;
       });
 
-      return { weeks, groups: sorted };
+      return { weeks, groups: sortedGroups };
     }
 
     /***************************************************************
-     * 5. 构造Chart (注意 y.reverse = true)
+     * 5. 创建Chart
+     *    - 不再 reverse: true → 最小值在底部
+     *    - 字体加大
+     *    - 环比/同比
      ***************************************************************/
     function createChart(weeks, dsList) {
       const ctx = document.getElementById("myChart").getContext("2d");
@@ -267,19 +266,16 @@
                 font: { size: 14 }
               },
               grid: {
-                color: "#ccc",
-                drawOnChartArea: true
+                color: "#ccc"
               }
             },
             y: {
-              /* 关键: 让数值小在上方, 大在下方 */
-              reverse: true,
-              // 若想从 0 开始，可加: beginAtZero: true,
+              // 让自动贴近最小值
+              beginAtZero: false,  // 也可以改 true
               ticks: {
                 color: "#333",
                 font: { size: 14 },
                 callback: function(value) {
-                  // 大于1000时显示k缩写
                   if (value >= 1000) return (value/1000)+"k";
                   return value;
                 }
@@ -297,18 +293,18 @@
                 label: function(context) {
                   const val = context.parsed.y;
                   let str = context.dataset.label + ": " + val;
-                  // 环比
                   const idx = context.dataIndex;
+                  // 环比
                   if(idx>0){
                     const prevVal = context.dataset.data[idx-1];
-                    if(!isNaN(prevVal) && prevVal !==0) {
+                    if(!isNaN(prevVal) && prevVal!==0) {
                       const diff = val - prevVal;
                       const ratio= diff/prevVal*100;
                       str += ` | 环比: ${diff.toFixed(0)} (${ratio.toFixed(2)}%)`;
                     }
                   }
                   // 同比(52周前)
-                  const yoyIdx= idx - 52;
+                  const yoyIdx= idx-52;
                   if(yoyIdx>=0){
                     const yoyVal= context.dataset.data[yoyIdx];
                     if(!isNaN(yoyVal) && yoyVal!==0){
@@ -332,13 +328,13 @@
     }
 
     /***************************************************************
-     * 6. 渲染侧边栏(分组折叠)
+     * 6. 渲染侧边栏 => 分组折叠
      ***************************************************************/
-    function renderGroupSidebar(gData){
+    function renderGroupSidebar(gData) {
       const container= document.getElementById("groupContainer");
       container.innerHTML="";
 
-      Object.keys(gData).forEach(grp=>{
+      Object.keys(gData).forEach(grp => {
         const details= document.createElement("details");
         details.className="group-panel";
 
@@ -347,7 +343,7 @@
         sumSpan.textContent= grp;
         summary.appendChild(sumSpan);
 
-        // 小按钮: 组内全选 / 全不选
+        // 小按钮:组内全选/全不选
         const allBtn= document.createElement("button");
         allBtn.style.fontSize="12px";
         allBtn.textContent="全选";
@@ -368,6 +364,7 @@
 
         details.appendChild(summary);
 
+        // keywords
         const kwMap= gData[grp];
         Object.keys(kwMap).forEach(kw=>{
           const lb= document.createElement("label");
@@ -394,7 +391,7 @@
     }
 
     // 组内全选/全不选
-    function setGroupCheck(groupName, isCheck){
+    function setGroupCheck(groupName, isCheck) {
       const cbs= document.querySelectorAll(`#groupContainer input[data-group="${groupName}"]`);
       cbs.forEach(cb=>{ cb.checked=isCheck; });
       updateVisibleLines();
@@ -437,10 +434,8 @@
      * 7. 时间筛选
      ***************************************************************/
     function displayWeekName(orig){
-      // e.g. "2023_10_15-10_21_Week_0" => "2023_10_15-10_21 W0"
       return orig.replace("_Week_"," W");
     }
-
     function filterDataRange(startIdx, endIdx){
       const cbs= document.querySelectorAll(`#groupContainer input[type='checkbox']:checked`);
       const dsList=[];
@@ -508,16 +503,14 @@
     /***************************************************************
      * 9. 事件
      ***************************************************************/
-    // sidebar toggle
+    // 侧边栏切换
     document.getElementById("toggleSidebar").addEventListener("click",()=>{
       document.getElementById("sidebar").classList.toggle("active");
     });
-
     // 刷新
     document.getElementById("btnRefresh").addEventListener("click",()=>{
       main();
     });
-
     // 筛选
     document.getElementById("btnFilter").addEventListener("click",()=>{
       const s= parseInt(document.getElementById("startWeek").value);
@@ -526,8 +519,7 @@
       const endIdx= Math.max(s,e);
       filterDataRange(startIdx,endIdx);
     });
-
-    // 全局全选 / 全不选
+    // 全局全选/全不选
     document.getElementById("globalAllBtn").addEventListener("click",()=>{
       setAllCheck(true);
     });
@@ -535,7 +527,7 @@
       setAllCheck(false);
     });
 
-    // run on load
+    // 页面加载自动执行
     main();
   </script>
 </body>
