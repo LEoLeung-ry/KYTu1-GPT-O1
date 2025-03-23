@@ -2,15 +2,14 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8" />
-  <title>KeyWord热度 + 氣温 (双Y轴, 样式优化)</title>
+  <title>KeyWord热度 + 氣温 (双Y轴, 组合tooltip & 悬停放大点)</title>
   <!-- Papa Parse (解析CSV) -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.2.1"></script>
   <style>
-    /* 保持和之前类似结构，只要overflow可滚动 */
     html, body {
-      margin: 0;
+      margin: 0; 
       padding: 0;
       height: 100%;
       font-family: sans-serif;
@@ -74,7 +73,7 @@
 
 <script>
 /***************************************************************
- * 1) CSV链接配置 (关键词 + 平均气温 + 最高气温)
+ * 1) CSV链接 (关键词/平均气温/最高气温)
  ***************************************************************/
 const KEYWORD_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTxT7pk3XLnPr87Fpq2Fii90bqh_R2jsCjO6e3dZkMLKmuw75ksYiuSce3DC7uUK5IXBEFmeKT1P7oJ/pub?output=csv";
 const AVG_TEMP_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQsIu0jYheUb5YE9-D0SwtL6FxkTjFwEgWaH56NdOyqYfNkcZLJGM2xp9T2wPLcF5lYFBZ3UCa7eiaj/pub?output=csv";
@@ -160,7 +159,7 @@ function fetchTempCSV(url){
     });
   });
 }
-// 简化: 第0行=标题, 第1行起 => [week_label, value]
+// 第0行=标题, 第1行起 => [week_label, value]
 function convertTempData(raw2D){
   const map={};
   for(let r=1; r<raw2D.length; r++){
@@ -183,24 +182,26 @@ function createChart(weeks, dsList){
   // 在 dsList 后面加2条气温线(右轴), 并弱化样式
   dsList.push({
     label: "平均气温",
-    data: tempAvgData, // 跟 labelsAll 对齐
-    borderColor: "rgba(0,0,255,0.7)", // 蓝色, 带点透明
-    borderWidth: 2,
-    borderDash: [6,3], // 虚线
-    fill:false,
-    tension:0.1,
-    pointRadius:0, // 不要点
-    yAxisID: "y2"
-  });
-  dsList.push({
-    label: "最高气温",
-    data: tempMaxData,
-    borderColor: "rgba(255,0,0,0.7)", // 红色, 带透明
+    data: tempAvgData,
+    borderColor: "rgba(0,0,255,0.7)",
     borderWidth: 2,
     borderDash: [6,3],
     fill:false,
     tension:0.1,
     pointRadius:0,
+    pointHoverRadius:6, // 悬停时放大点
+    yAxisID: "y2"
+  });
+  dsList.push({
+    label: "最高气温",
+    data: tempMaxData,
+    borderColor: "rgba(255,0,0,0.7)",
+    borderWidth: 2,
+    borderDash: [6,3],
+    fill:false,
+    tension:0.1,
+    pointRadius:0,
+    pointHoverRadius:6,
     yAxisID: "y2"
   });
 
@@ -213,6 +214,11 @@ function createChart(weeks, dsList){
     options: {
       responsive:true,
       maintainAspectRatio:false,
+      // 1) 让鼠标悬停在xIndex时显示所有dataset
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
       scales: {
         x: {
           title:{ display:true, text:"周" }
@@ -233,11 +239,11 @@ function createChart(weeks, dsList){
       },
       plugins: {
         legend: {
-          labels: { font:{ size:16 } }
+          labels: { font:{ size:18 } }
         },
         tooltip: {
-          titleFont: { size:16 },
-          bodyFont: { size:16 },
+          titleFont: { size:18 },
+          bodyFont: { size:18 },
           callbacks: {
             label: function(context) {
               const val= context.parsed.y;
@@ -334,6 +340,7 @@ function updateVisibleLines(){
       fill:false,
       tension:0.1,
       pointRadius:2,
+      pointHoverRadius:6, // 悬停时放大点
       yAxisID:"y" // 关键词走左轴
     });
     idx++;
@@ -368,6 +375,7 @@ function filterDataRange(startIdx, endIdx){
       fill:false,
       tension:0.1,
       pointRadius:2,
+      pointHoverRadius:6,
       yAxisID:"y"
     });
     i++;
@@ -393,6 +401,7 @@ function createChart2(weeks, dsList, slicedAvg, slicedMax){
     fill:false,
     tension:0.1,
     pointRadius:0,
+    pointHoverRadius:6,
     yAxisID:"y2"
   });
   dsList.push({
@@ -404,6 +413,7 @@ function createChart2(weeks, dsList, slicedAvg, slicedMax){
     fill:false,
     tension:0.1,
     pointRadius:0,
+    pointHoverRadius:6,
     yAxisID:"y2"
   });
 
@@ -413,6 +423,10 @@ function createChart2(weeks, dsList, slicedAvg, slicedMax){
     options:{
       responsive:true,
       maintainAspectRatio:false,
+      interaction:{
+        mode:'index',
+        intersect:false
+      },
       scales:{
         x:{ title:{ display:true, text:"周" } },
         y:{
@@ -427,10 +441,10 @@ function createChart2(weeks, dsList, slicedAvg, slicedMax){
         }
       },
       plugins:{
-        legend:{ labels:{ font:{ size:16 } } },
+        legend:{ labels:{ font:{ size:18 } } },
         tooltip:{
-          titleFont:{ size:16 },
-          bodyFont:{ size:16 },
+          titleFont:{ size:18 },
+          bodyFont:{ size:18 },
           callbacks:{
             label: function(context){
               const val= context.parsed.y;
@@ -438,7 +452,6 @@ function createChart2(weeks, dsList, slicedAvg, slicedMax){
               if(context.dataset.yAxisID==="y2"){
                 str+= "°C";
               }
-              // yoy
               const yoyIdx= context.dataIndex - 52;
               if(yoyIdx>=0){
                 const yoyVal= context.dataset.data[yoyIdx];
