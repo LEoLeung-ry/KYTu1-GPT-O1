@@ -1,252 +1,202 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8">
-  <title>双Y轴(合并Tooltip)示例</title>
-
-  <!-- Papa Parse -->
+  <meta charset="UTF-8" />
+  <title>KeyWord热度 + 氣温 + 搜索</title>
+  <!-- Papa Parse (解析CSV) -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.2.1"></script>
 
   <style>
     html, body {
-      margin:0; 
-      padding:0;
+      margin: 0; 
+      padding: 0;
+      height: 100%;
       font-family: sans-serif;
-      overflow-y: auto; /* 允许上下滚动 */
+      overflow: auto;
     }
-    .container {
-      width:100%;
-      max-width:1600px;
-      margin:0 auto;
-      padding:10px;
-    }
-    .controlBar {
-      margin-bottom:10px;
-    }
-    .chartBox {
-      border:1px solid #ccc;
-      margin-bottom:20px;
-      padding:10px;
-    }
-    #myChart {
-      width:100%;
-      height:700px;
-      background:#fff;
-    }
-    /* 侧边栏(仅关键词用) */
     .sidebar-toggle {
-      background:#3b5998;
-      color:#fff;
-      padding:6px 10px;
-      border:none;
+      position: fixed; left:0; top:0; z-index:9999;
+      background: #3b5998; color:#fff; padding:8px 12px; border:none;
       cursor:pointer;
-      margin-right:8px;
     }
-    .sidebarKw {
-      position:absolute;
-      top:140px;
-      left:20px;
-      width:250px; 
-      height:400px;
-      background:#fafafa;
-      box-shadow:2px 2px 5px rgba(0,0,0,0.2);
-      transform:translateX(-300%);
-      transition:0.3s;
-      overflow-y:auto;
-      padding:10px;
-      box-sizing:border-box;
-      z-index:9999;
+    .sidebar {
+      position: fixed; left:0; top:0; width:280px; height:100vh; background:#fafafa;
+      box-shadow: 2px 0 5px rgba(0,0,0,0.2);
+      transform: translateX(-100%); transition: transform 0.3s; padding:10px;
+      box-sizing:border-box; overflow-y:auto; z-index:9998;
     }
-    .sidebarKw.active {
-      transform:translateX(0);
+    .sidebar.active { transform:translateX(0); }
+    .sidebar h3 {
+      margin:0 0 6px; 
+      display:flex; align-items:center; gap:4px;
     }
-    .sidebarKw h3 {
-      margin-top:0; 
-      margin-bottom:6px;
-      display:flex; 
-      align-items:center;
-      gap:4px;
+    .search-row {
+      display:flex; align-items:center; gap:4px;
+      margin-bottom:8px;
     }
-    .group-panel {
-      margin-bottom:6px;
-      border:1px solid #ccc;
-      border-radius:4px;
-    }
-    summary {
-      background:#eee;
+    .search-row input {
+      flex:1;
       padding:4px 6px;
-      font-weight:bold;
-      cursor:pointer;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
+      font-size:14px;
+    }
+    .search-row button {
+      font-size:12px; cursor:pointer; padding:4px 8px;
+    }
+    .group-panel { margin-bottom:6px; border:1px solid #ccc; border-radius:4px; }
+    summary {
+      background:#eee; padding:4px 6px; font-weight:bold; cursor:pointer;
+      display:flex; align-items:center; justify-content:space-between;
     }
     summary button {
-      font-size:12px;
-      margin-left:8px;
-      cursor:pointer;
+      font-size:12px; cursor:pointer; margin-left:8px;
+    }
+
+    .main-area {
+      margin-left:60px; display:flex; flex-direction:column; height:100vh;
+    }
+    .topbar {
+      background:#f0f0f0; padding:8px; display:flex; align-items:center; gap:6px; flex-shrink:0;
+    }
+    .chart-container {
+      flex:1; position:relative; overflow:auto;
+    }
+    #myChart {
+      min-width:1200px; min-height:600px;
     }
   </style>
 </head>
+
 <body>
+  <!-- 侧边栏按钮 -->
+  <button class="sidebar-toggle" id="toggleSidebar">≡</button>
 
-<div class="container">
-
-  <h1>双Y轴(左:关键词排名 右:气温) + 合并Tooltip示例</h1>
-
-  <div class="controlBar">
-    <button class="sidebar-toggle" id="toggleSidebarKw">≡ 分组</button>
-    <button id="btnRefresh">刷新数据</button>
-
-    <label>开始周:</label>
-    <select id="startWeek"></select>
-    <label>结束周:</label>
-    <select id="endWeek"></select>
-    <button id="btnFilter">更新区间</button>
-  </div>
-
-  <!-- 侧边栏: 关键词分组折叠 -->
-  <div class="sidebarKw" id="sidebarKw">
-    <h3>分组
-      <button id="btnKwAll">全选</button>
-      <button id="btnKwNone">全不选</button>
+  <!-- 侧边栏 -->
+  <div class="sidebar" id="sidebar">
+    <h3>
+      分组
+      <button id="globalAllBtn">全选</button>
+      <button id="globalNoneBtn">全不选</button>
     </h3>
-    <div id="groupContainerKw"></div>
+
+    <!-- 搜索行 -->
+    <div class="search-row">
+      <input type="text" id="searchInput" placeholder="搜索分组或关键词...">
+      <button id="btnClearSearch">X</button>
+    </div>
+
+    <div id="groupContainer"></div>
+    <div id="noMatchMsg" style="display:none; color:#999; margin-top:8px;">
+      未找到匹配项
+    </div>
   </div>
 
-  <div class="chartBox">
-    <canvas id="myChart"></canvas>
+  <div class="main-area">
+    <div class="topbar">
+      <h1 style="margin:0; flex:1;">KeyWord热度 + 氣温 + 搜索</h1>
+      <button id="btnRefresh">刷新数据</button>
+      <label>开始周:</label>
+      <select id="startWeek"></select>
+      <label>结束周:</label>
+      <select id="endWeek"></select>
+      <button id="btnFilter">更新区间</button>
+    </div>
+    <div class="chart-container">
+      <canvas id="myChart"></canvas>
+    </div>
   </div>
-</div>
 
 <script>
-/***************************************************************
- * 1. 三个CSV: 关键词(宽表), 平均气温, 最高气温
- ***************************************************************/
-const KW_CSV_URL   = "https://docs.google.com/spreadsheets/d/e/.../pub?output=csv";
-const AVG_CSV_URL  = "https://docs.google.com/spreadsheets/d/e/.../pub?output=csv";
-const MAX_CSV_URL  = "https://docs.google.com/spreadsheets/d/e/.../pub?output=csv";
+// 1) CSV 链接
+const KEYWORD_CSV_URL = "...";
+const AVG_TEMP_CSV_URL = "...";
+const MAX_TEMP_CSV_URL = "...";
 
-/***************************************************************
- * 2. Papa Parse
- ***************************************************************/
-function parseCSV(url){
-  return new Promise((resolve, reject)=>{
-    Papa.parse(url, {
-      download:true,
-      complete: res => resolve(res.data),
-      error: err => reject(err)
+// 2) 全局变量
+let chart;
+let labelsAll=[];
+let groupsData={};
+let tempAvgData=[];
+let tempMaxData=[];
+let globalGroupsRaw={}; // 用于存储“原始的 groupsData”，以便搜索过滤
+
+// ============ 侧边栏搜索 ============
+// 当用户输入搜索内容时，会过滤“分组”与“关键词”名字
+// 如果分组名本身匹配，就显示整个分组；否则只显示匹配的关键词；
+// 如果一个分组下完全没有匹配的关键词，就不显示该分组。
+function renderGroupSidebar(groups, searchTerm=""){
+  const container= document.getElementById("groupContainer");
+  const noMatchMsg= document.getElementById("noMatchMsg");
+  container.innerHTML="";
+  noMatchMsg.style.display="none";
+
+  const s= searchTerm.trim().toLowerCase();
+  let matchedCount=0;
+
+  Object.keys(groups).forEach(grp=>{
+    const grpLower= grp.toLowerCase();
+    // 检查分组名是否匹配
+    const groupMatched= s.length>0 && grpLower.includes(s);
+    const kwMap= groups[grp];
+
+    // 收集匹配关键词
+    let matchedKeywords=[];
+    Object.keys(kwMap).forEach(kw=>{
+      const kwLower= kw.toLowerCase();
+      if(groupMatched || (kwLower.includes(s))) {
+        matchedKeywords.push(kw);
+      }
     });
-  });
-}
 
-/***************************************************************
- * 3. 全局结构
- ***************************************************************/
-let allWeeks = [];  // X轴: union(关键词+气温) 
-// 关键词 => group=> {keyword=>[]}
-let kwGroups= {};
-// 氣温 => arrAvg, arrMax
-let arrAvg= [];
-let arrMax= [];
-
-/***************************************************************
- * 4. 载入关键词(宽表->长表->分组)
- ***************************************************************/
-async function loadKeywords(){
-  const raw= await parseCSV(KW_CSV_URL);
-  // row0 => group, row1=>keyword, row2+ => fileName+data
-  let longData=[];
-  const rowGrp= raw[0];
-  const rowKw = raw[1];
-  for(let r=2; r< raw.length; r++){
-    const row= raw[r];
-    const fn= row[0];
-    for(let c=1; c< row.length; c++){
-      const grp= rowGrp[c];
-      const k  = rowKw[c];
-      const val= Number(row[c]||0);
-      longData.push({fn,grp,k,val});
+    if(s.length===0) {
+      // 无搜索 => 显示所有关键词
+      matchedKeywords= Object.keys(kwMap);
     }
-  }
-  // union weeks
-  let setW= new Set(allWeeks);
-  longData.forEach(it=> setW.add(it.fn));
-  allWeeks= Array.from(setW).sort();
 
-  // group => {k=> array}
-  let gData={};
-  let count= allWeeks.length;
-  longData.forEach(it=>{
-    const f= it.fn;
-    const g= it.grp;
-    const k= it.k;
-    const v= it.val;
-    if(!gData[g]) gData[g]={};
-    if(!gData[g][k]) gData[g][k]= new Array(count).fill(NaN);
-    let idx= allWeeks.indexOf(f);
-    gData[g][k][idx]= v;
+    if(matchedKeywords.length>0){
+      matchedCount++;
+      // 创建 details
+      const details= document.createElement("details");
+      details.className="group-panel";
+
+      // summary
+      const summary= document.createElement("summary");
+      summary.textContent= grp;
+      details.appendChild(summary);
+
+      matchedKeywords.forEach(kw=>{
+        const lb= document.createElement("label");
+        lb.style.display="block";
+        const cb= document.createElement("input");
+        cb.type="checkbox";
+        cb.checked=true;
+        cb.dataset.group=grp;
+        cb.dataset.keyword=kw;
+
+        lb.appendChild(cb);
+        lb.append(" "+kw);
+        details.appendChild(lb);
+      });
+
+      container.appendChild(details);
+    }
   });
-  // sort
-  let sorted={};
-  Object.keys(gData).sort().forEach(grp=>{
-    let kwMap= gData[grp];
-    let sortedKw={};
-    Object.keys(kwMap).sort().forEach(k=>{
-      sortedKw[k]= kwMap[k];
-    });
-    sorted[grp]= sortedKw;
-  });
-  kwGroups= sorted;
-}
 
-/***************************************************************
- * 5. 载入气温(平均/最高)
- ***************************************************************/
-async function loadTemperature(){
-  const rawAvg= await parseCSV(AVG_CSV_URL);
-  // row0 => [ "fileName","avg" ]
-  let mapAvg= {};
-  for(let r=1; r< rawAvg.length; r++){
-    const row= rawAvg[r];
-    const fn= row[0];
-    const val= Number(row[1]||0);
-    mapAvg[fn]= val;
-  }
-  const rawMax= await parseCSV(MAX_CSV_URL);
-  let mapMax= {};
-  for(let r=1; r< rawMax.length; r++){
-    const row= rawMax[r];
-    const fn= row[0];
-    const val= Number(row[1]||0);
-    mapMax[fn]= val;
+  if(matchedCount===0){
+    noMatchMsg.style.display="";
   }
 
-  // union weeks
-  let setW= new Set(allWeeks);
-  Object.keys(mapAvg).forEach(fn=> setW.add(fn));
-  Object.keys(mapMax).forEach(fn=> setW.add(fn));
-  allWeeks= Array.from(setW).sort();
-
-  arrAvg= new Array(allWeeks.length).fill(NaN);
-  arrMax= new Array(allWeeks.length).fill(NaN);
-  allWeeks.forEach((fn,i)=>{
-    if(fn in mapAvg) arrAvg[i]= mapAvg[fn];
-    if(fn in mapMax) arrMax[i]= mapMax[fn];
+  // 重新绑定事件
+  container.addEventListener("change",(e)=>{
+    if(e.target.type==="checkbox") updateVisibleLines();
   });
 }
 
-/***************************************************************
- * 6. 构造 datasets (关键词 + 氣温)
- *    关键词 => yAxisID:'yKw' (reverse)
- *    氣温 => yAxisID:'yTemp' (normal)
- ***************************************************************/
-function buildDatasets(){
-  let dsList=[];
-  // 关键词(从 sidebar checked 里获取)
-  const cbs= document.querySelectorAll(`#groupContainerKw input[type='checkbox']:checked`);
+// 3) updateVisibleLines
+function updateVisibleLines(){
+  const cbs= document.querySelectorAll(`#groupContainer input[type='checkbox']:checked`);
+  const dsList=[];
   const colorList=[
     "#e6194b","#3cb44b","#ffe119","#0082c8","#f58231","#911eb4","#46f0f0",
     "#f032e6","#d2f53c","#fabebe","#008080","#e6beff","#aa6e28","#fffac8",
@@ -254,111 +204,96 @@ function buildDatasets(){
   ];
   let idx=0;
   cbs.forEach(cb=>{
-    const g= cb.dataset.group;
-    const k= cb.dataset.keyword;
+    const grp= cb.dataset.group;
+    const kw= cb.dataset.keyword;
+    const arr= groupsData[grp][kw];
     dsList.push({
-      label: g+"/"+k,
-      data: kwGroups[g][k],
+      label: grp+"/"+kw,
+      data: arr,
       borderColor: colorList[idx%colorList.length],
       fill:false,
       tension:0.1,
       pointRadius:2,
-      yAxisID: 'yKw'
+      pointHoverRadius:6,
+      yAxisID:"y"
     });
     idx++;
   });
+  createChart(labelsAll, dsList);
+}
 
-  // 氣温(固定2条: 平均, 最高)
+// 4) createChart: 单图 + 双Y轴 + tooltip
+function createChart(weeks, dsList){
+  const ctx= document.getElementById("myChart").getContext("2d");
+  if(chart) chart.destroy();
+
+  // 把气温线加进去
   dsList.push({
     label:"平均气温",
-    data: arrAvg,
-    borderColor:"blue",
+    data: tempAvgData,
+    borderColor:"rgba(0,0,255,0.7)",
+    borderWidth:2,
+    borderDash:[6,3],
     fill:false,
     tension:0.1,
-    pointRadius:2,
-    yAxisID:'yTemp'
+    pointRadius:0,
+    pointHoverRadius:6,
+    yAxisID:"y2"
   });
   dsList.push({
     label:"最高气温",
-    data: arrMax,
-    borderColor:"red",
+    data: tempMaxData,
+    borderColor:"rgba(255,0,0,0.7)",
+    borderWidth:2,
+    borderDash:[6,3],
     fill:false,
     tension:0.1,
-    pointRadius:2,
-    yAxisID:'yTemp'
+    pointRadius:0,
+    pointHoverRadius:6,
+    yAxisID:"y2"
   });
 
-  return dsList;
-}
-
-/***************************************************************
- * 7. 创建图 (合并Tooltip)
- ***************************************************************/
-let chartObj;
-function renderChart(weeks, ds){
-  const ctx= document.getElementById("myChart").getContext("2d");
-  if(chartObj) chartObj.destroy();
-
-  chartObj= new Chart(ctx, {
-    type:'line',
-    data:{
-      labels: weeks,
-      datasets: ds
-    },
+  chart= new Chart(ctx, {
+    type:"line",
+    data:{ labels:weeks, datasets: dsList },
     options:{
       responsive:true,
       maintainAspectRatio:false,
-      // 关键: 让Tooltip在同xindex合并
-      interaction:{
-        mode:'index',
-        intersect:false
-      },
+      interaction:{ mode:'index', intersect:false },
       scales:{
-        x:{
-          title:{display:true,text:"周"},
-          ticks:{
-            autoSkip:false, maxRotation:45, minRotation:45,
-            color:"#333", font:{size:14}
-          }
+        x:{ title:{ display:true, text:"周" } },
+        y:{
+          reverse:true,
+          title:{ display:true, text:"关键词热度(数值小→上)" }
         },
-        yKw:{
-          type:'linear',
-          position:'left',
-          reverse:true, // 排名小值在上
-          ticks:{
-            color:"#333",font:{size:14},
-            callback:function(value){
-              if(value>=1000) return (value/1000)+"k";
-              return value;
-            }
-          }
-        },
-        yTemp:{
-          type:'linear',
-          position:'right',
-          reverse:false, // 氣温正常坐标
-          grid:{ drawOnChartArea:false }, // 不绘制网格以免重叠
-          ticks:{
-            color:"#d33", font:{size:14},
-            callback:function(v){
-              return v.toFixed(2)+"°C";
-            }
-          }
+        y2:{
+          position:"right",
+          reverse:false,
+          title:{ display:true, text:"气温(℃)" },
+          grid:{ drawOnChartArea:false }
         }
       },
       plugins:{
+        legend:{ labels:{ font:{ size:16 } } },
         tooltip:{
-          // single tooltip merges all lines
+          titleFont:{ size:16 },
+          bodyFont:{ size:16 },
           callbacks:{
-            label:function(context){
-              const dsLabel= context.dataset.label;
+            label: function(context){
               const val= context.parsed.y;
-              if(dsLabel.includes("气温")){
-                return dsLabel+": "+ val.toFixed(2)+"°C";
-              } else {
-                // 关键词ranking
-                return dsLabel+": "+ val;
+              let str= context.dataset.label + ": " + val;
+              if(context.dataset.yAxisID==="y2"){
+                str+= "°C";
               }
+              // yoy
+              const yoyIdx= context.dataIndex - 52;
+              if(yoyIdx>=0){
+                const yoyVal= context.dataset.data[yoyIdx];
+                if(!isNaN(yoyVal)){
+                  str+= " (去年: "+ yoyVal.toFixed(2)+"°C)";
+                }
+              }
+              return str;
             }
           }
         }
@@ -367,133 +302,177 @@ function renderChart(weeks, ds){
   });
 }
 
-/***************************************************************
- * 8. 切片(区间筛选)
- ***************************************************************/
-function filterRange(startIdx, endIdx){
-  const dsFull= buildDatasets();
-  // slice each data
-  const dsSliced= dsFull.map(one=>{
-    const sub= one.data.slice(startIdx,endIdx+1);
-    return {...one, data: sub};
+// 5) 过滤区间
+function filterDataRange(startIdx, endIdx){
+  const cbs= document.querySelectorAll(`#groupContainer input[type='checkbox']:checked`);
+  const dsList=[];
+  const colorList=[
+    "#e6194b","#3cb44b","#ffe119","#0082c8","#f58231","#911eb4","#46f0f0",
+    "#f032e6","#d2f53c","#fabebe","#008080","#e6beff","#aa6e28","#fffac8",
+    "#800000","#aaffc3","#808000","#ffd8b1","#000080","#808080","#000000"
+  ];
+  let i=0;
+  cbs.forEach(cb=>{
+    const grp= cb.dataset.group;
+    const kw= cb.dataset.keyword;
+    const fullData= groupsData[grp][kw];
+    const sliced= fullData.slice(startIdx,endIdx+1);
+    dsList.push({
+      label: grp+"/"+kw,
+      data: sliced,
+      borderColor: colorList[i%colorList.length],
+      fill:false,
+      tension:0.1,
+      pointRadius:2,
+      pointHoverRadius:6,
+      yAxisID:"y"
+    });
+    i++;
   });
-  const subWeeks= allWeeks.slice(startIdx,endIdx+1);
-  renderChart(subWeeks, dsSliced);
+  const slicedWeeks= labelsAll.slice(startIdx,endIdx+1);
+  const slicedAvg= tempAvgData.slice(startIdx,endIdx+1);
+  const slicedMax= tempMaxData.slice(startIdx,endIdx+1);
+
+  createChart2(slicedWeeks, dsList, slicedAvg, slicedMax);
 }
-
-/***************************************************************
- * 侧边栏(关键词)
- ***************************************************************/
-function renderSidebarKw(){
-  const container= document.getElementById("groupContainerKw");
-  container.innerHTML="";
-  Object.keys(kwGroups).forEach(g=>{
-    const details= document.createElement("details");
-    details.className="group-panel";
-
-    const summary= document.createElement("summary");
-    const sumSpan= document.createElement("span");
-    sumSpan.textContent= g;
-    summary.appendChild(sumSpan);
-
-    // group-level all/none
-    const allBtn= document.createElement("button");
-    allBtn.textContent="全选";
-    allBtn.style.fontSize="12px";
-    allBtn.addEventListener("click",(e)=>{
-      e.stopPropagation();
-      setGroupCheckKw(g,true);
-    });
-    summary.appendChild(allBtn);
-
-    const noneBtn= document.createElement("button");
-    noneBtn.textContent="全不选";
-    noneBtn.style.fontSize="12px";
-    noneBtn.addEventListener("click",(e)=>{
-      e.stopPropagation();
-      setGroupCheckKw(g,false);
-    });
-    summary.appendChild(noneBtn);
-
-    details.appendChild(summary);
-
-    const kwMap= kwGroups[g];
-    Object.keys(kwMap).forEach(k=>{
-      const lb= document.createElement("label");
-      lb.style.display="block";
-      const cb= document.createElement("input");
-      cb.type="checkbox";
-      cb.checked=true;
-      cb.dataset.group= g;
-      cb.dataset.keyword= k;
-      lb.appendChild(cb);
-      lb.append(" "+k);
-      details.appendChild(lb);
-    });
-
-    container.appendChild(details);
+function createChart2(weeks, dsList, slicedAvg, slicedMax){
+  if(chart) chart.destroy();
+  // 加入气温线
+  dsList.push({
+    label:"平均气温",
+    data:slicedAvg,
+    borderColor:"rgba(0,0,255,0.7)",
+    borderWidth:2,
+    borderDash:[6,3],
+    fill:false,
+    tension:0.1,
+    pointRadius:0,
+    pointHoverRadius:6,
+    yAxisID:"y2"
+  });
+  dsList.push({
+    label:"最高气温",
+    data:slicedMax,
+    borderColor:"rgba(255,0,0,0.7)",
+    borderWidth:2,
+    borderDash:[6,3],
+    fill:false,
+    tension:0.1,
+    pointRadius:0,
+    pointHoverRadius:6,
+    yAxisID:"y2"
   });
 
-  container.addEventListener("change",(e)=>{
-    if(e.target.type==="checkbox"){
-      const ds= buildDatasets();
-      renderChart(allWeeks, ds);
+  const ctx= document.getElementById("myChart").getContext("2d");
+  chart= new Chart(ctx, {
+    type:"line",
+    data:{ labels: weeks, datasets: dsList },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      interaction:{ mode:'index', intersect:false },
+      scales:{
+        x:{ title:{ display:true, text:"周" } },
+        y:{ reverse:true, title:{ display:true, text:"关键词热度(数值小→上)" } },
+        y2:{ position:"right", reverse:false, title:{ display:true, text:"气温(℃)" }, grid:{ drawOnChartArea:false } }
+      },
+      plugins:{
+        legend:{ labels:{ font:{ size:16 } } },
+        tooltip:{
+          titleFont:{ size:16 },
+          bodyFont:{ size:16 },
+          callbacks:{
+            label: function(context){
+              const val= context.parsed.y;
+              let str= context.dataset.label + ": " + val;
+              if(context.dataset.yAxisID==="y2"){
+                str+= "°C";
+              }
+              const yoyIdx= context.dataIndex - 52;
+              if(yoyIdx>=0){
+                const yoyVal= context.dataset.data[yoyIdx];
+                if(!isNaN(yoyVal)){
+                  str+= " (去年: "+ yoyVal.toFixed(2)+"°C)";
+                }
+              }
+              return str;
+            }
+          }
+        }
+      }
     }
   });
 }
 
-function setGroupCheckKw(grp, isCheck){
-  const cbs= document.querySelectorAll(`#groupContainerKw input[data-group="${grp}"]`);
-  cbs.forEach(cb=> cb.checked=isCheck);
-  const ds= buildDatasets();
-  renderChart(allWeeks, ds);
-}
-function setAllCheckKw(isCheck){
-  const cbs= document.querySelectorAll(`#groupContainerKw input[type='checkbox']`);
-  cbs.forEach(cb=> cb.checked=isCheck);
-  const ds= buildDatasets();
-  renderChart(allWeeks, ds);
-}
-
-/***************************************************************
- * 入口
- ***************************************************************/
+// 6) 主流程
 async function main(){
-  // 1) 加载关键词
-  await loadKeywords();
-  // 2) 加载气温
-  await loadTemperature();
-  // 3) 渲染 sidebar
-  renderSidebarKw();
-  // 4) init下拉
-  const startSel= document.getElementById("startWeek");
-  const endSel  = document.getElementById("endWeek");
-  startSel.innerHTML="";
-  endSel.innerHTML="";
-  allWeeks.forEach((wk,i)=>{
-    const o1= document.createElement("option");
-    o1.value= i;
-    o1.text= wk.replace("_Week_"," W");
-    startSel.appendChild(o1);
+  // 关键词
+  const keywordRaw= await parseCSV(KEYWORD_CSV_URL);
+  const longData= convertWideToLong(keywordRaw.data);
+  const { weeks, groups }= processLongRows(longData);
+  labelsAll= weeks;
+  groupsData= groups;
 
-    const o2= document.createElement("option");
-    o2.value= i;
-    o2.text= wk.replace("_Week_"," W");
-    endSel.appendChild(o2);
+  // 平均气温
+  const avgRaw= await parseCSV(AVG_TEMP_CSV_URL);
+  const avgMap= convertTempData(avgRaw.data);
+
+  // 最高气温
+  const maxRaw= await parseCSV(MAX_TEMP_CSV_URL);
+  const maxMap= convertTempData(maxRaw.data);
+
+  // 对齐
+  tempAvgData= new Array(labelsAll.length).fill(NaN);
+  tempMaxData= new Array(labelsAll.length).fill(NaN);
+  labelsAll.forEach((wk,i)=>{
+    if(avgMap[wk]!=null){
+      tempAvgData[i]= avgMap[wk];
+    }
+    if(maxMap[wk]!=null){
+      tempMaxData[i]= maxMap[wk];
+    }
+  });
+
+  // 渲染侧边栏
+  // 先存储到 globalGroupsRaw, 以便搜索时能还原
+  globalGroupsRaw= groups;
+  renderGroupSidebar(groups, "");
+
+  // 初始化下拉
+  const startSel= document.getElementById("startWeek");
+  const endSel= document.getElementById("endWeek");
+  weeks.forEach((wk,i)=>{
+    const opt1= document.createElement("option");
+    opt1.value=i;
+    opt1.text= wk.replace("_Week_"," W");
+    startSel.appendChild(opt1);
+
+    const opt2= document.createElement("option");
+    opt2.value=i;
+    opt2.text= wk.replace("_Week_"," W");
+    endSel.appendChild(opt2);
   });
   startSel.value=0;
-  endSel.value= allWeeks.length-1;
+  endSel.value= weeks.length-1;
 
-  // 5) 默认 => buildDatasets => render
-  const ds= buildDatasets();
-  renderChart(allWeeks, ds);
+  // 默认全选
+  updateVisibleLines();
 }
 
-/***************************************************************
- * 事件
- ***************************************************************/
+// 7) parseCSV
+function parseCSV(url){
+  return new Promise((resolve, reject)=>{
+    Papa.parse(url, {
+      download:true,
+      complete: res => resolve(res),
+      error: err => reject(err)
+    });
+  });
+}
+
+// 8) 事件
 document.getElementById("toggleSidebar").addEventListener("click",()=>{
-  document.getElementById("sidebarKw").classList.toggle("active");
+  document.getElementById("sidebar").classList.toggle("active");
 });
 document.getElementById("btnRefresh").addEventListener("click",()=>{
   main();
@@ -503,20 +482,28 @@ document.getElementById("btnFilter").addEventListener("click",()=>{
   const e= parseInt(document.getElementById("endWeek").value);
   const startIdx= Math.min(s,e);
   const endIdx= Math.max(s,e);
-  filterRange(startIdx,endIdx);
+  filterDataRange(startIdx,endIdx);
 });
-document.getElementById("btnKwAll").addEventListener("click",()=>{
-  setAllCheckKw(true);
+document.getElementById("globalAllBtn").addEventListener("click",()=>{
+  setAllCheck(true);
 });
-document.getElementById("btnKwNone").addEventListener("click",()=>{
-  setAllCheckKw(false);
+document.getElementById("globalNoneBtn").addEventListener("click",()=>{
+  setAllCheck(false);
 });
 
-// onload
-window.onload= ()=>{
-  main().catch(err=>console.error("main error:", err));
-};
+// 搜索框
+document.getElementById("searchInput").addEventListener("input",(e)=>{
+  const val= e.target.value;
+  renderGroupSidebar(globalGroupsRaw, val);
+});
+document.getElementById("btnClearSearch").addEventListener("click",()=>{
+  const inp= document.getElementById("searchInput");
+  inp.value="";
+  renderGroupSidebar(globalGroupsRaw, "");
+});
+
+// run on load
+main();
 </script>
-
 </body>
 </html>
