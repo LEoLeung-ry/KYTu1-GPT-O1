@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8" />
-  <title>KeyWord热度 + 氣温 + 搜索 + 最近一周数值</title>
+  <title>KeyWord热度</title>
   <!-- Papa Parse (解析CSV) -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
   <!-- Chart.js -->
@@ -118,7 +118,7 @@
 
   <div class="main-area">
     <div class="topbar">
-      <h1 style="margin:0; flex:1;">KeyWord热度 + 氣温 + 搜索 + 最近一周数值</h1>
+      <h1 style="margin:0; flex:1;">KeyWord热度 + 氣温 + 搜索 + 最近一周(排序)</h1>
       <button id="btnRefresh">刷新数据</button>
       <label>开始周:</label>
       <select id="startWeek"></select>
@@ -133,7 +133,7 @@
 
 <script>
 /***************************************************************
- * 1) CSV链接 (改成你自己的)
+ * 1) CSV链接 (请改成你自己的)
  ***************************************************************/
 const KEYWORD_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTxT7pk3XLnPr87Fpq2Fii90bqh_R2jsCjO6e3dZkMLKmuw75ksYiuSce3DC7uUK5IXBEFmeKT1P7oJ/pub?output=csv";
 const AVG_TEMP_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQsIu0jYheUb5YE9-D0SwtL6FxkTjFwEgWaH56NdOyqYfNkcZLJGM2xp9T2wPLcF5lYFBZ3UCa7eiaj/pub?output=csv";
@@ -234,7 +234,7 @@ function convertTempData(raw2D){
 }
 
 /***************************************************************
- * C. createChart(): 单图 + 左轴(关键词) + 右轴(气温)
+ * C. createChart(): 单图 + 左轴(关键词,反转) + 右轴(气温,正常)
  ***************************************************************/
 function createChart(weeks, dsList){
   const ctx= document.getElementById("myChart").getContext("2d");
@@ -316,17 +316,16 @@ function createChart(weeks, dsList){
 }
 
 /***************************************************************
- * D. 在关键词后面显示“(最近一周数值)”
+ * D. 在关键词后面显示“(最后一周数值)”
  ***************************************************************/
-function computeLatestValue(arr){
-  // arr最后一个元素 => arr[arr.length-1]
+function getLatestValue(arr){
   if(arr.length===0) return NaN;
   const lastVal= arr[arr.length-1];
   return lastVal; // 可能是NaN
 }
 
 /***************************************************************
- * D. 渲染侧边栏(分组+关键词)
+ * D. 渲染侧边栏(分组+关键词) - 按"最近一周数值"升序
  ***************************************************************/
 function renderGroupSidebar(gData){
   const container= document.getElementById("groupContainer");
@@ -365,27 +364,41 @@ function renderGroupSidebar(gData){
 
     details.appendChild(summary);
 
-    // 关键词
+    // 关键词 => 收集 {kw, lastVal}, 排序
     const kwMap= gData[grp];
-    Object.keys(kwMap).forEach(kw=>{
+    let kwArray= Object.keys(kwMap).map(kw=>{
+      const arr= kwMap[kw];
+      const lastVal= getLatestValue(arr);
+      return { kw, lastVal, arr };
+    });
+
+    // 按 lastVal 升序, NaN 排最后
+    kwArray.sort((a,b)=>{
+      const A= a.lastVal, B= b.lastVal;
+      const isANaN= isNaN(A), isBNaN= isNaN(B);
+      if(isANaN && isBNaN) return a.kw.localeCompare(b.kw); // 都NaN => 比较名称
+      if(isANaN) return 1;   // A=NaN => 排后
+      if(isBNaN) return -1;  // B=NaN => 排后
+      return A - B; // 升序
+    });
+
+    // 创建 label
+    kwArray.forEach(obj=>{
       const lb= document.createElement("label");
       const cb= document.createElement("input");
       cb.type="checkbox";
       cb.checked=true;
       cb.dataset.group= grp;
-      cb.dataset.keyword= kw;
+      cb.dataset.keyword= obj.kw;
 
-      // 计算“最近一周”数值
-      const arr= kwMap[kw];
-      const lastVal= computeLatestValue(arr);
-      let lastStr= "";
-      if(!isNaN(lastVal)){
+      let lastStr="";
+      if(!isNaN(obj.lastVal)){
         // toFixed(1)
-        lastStr= " ("+lastVal.toFixed(1)+")";
+        lastStr= " ("+obj.lastVal.toFixed(1)+")";
       }
 
       lb.appendChild(cb);
-      lb.append(" "+kw+lastStr);
+      lb.append(" "+obj.kw+ lastStr);
       details.appendChild(lb);
     });
 
@@ -465,7 +478,7 @@ function updateVisibleLines(){
   cbs.forEach(cb=>{
     const grp= cb.dataset.group;
     const kw= cb.dataset.keyword;
-    const arr= groupsData[grp][kw];
+    const arr= globalGroupsRaw[grp][kw]; // or groupsData[grp][kw]
     dsList.push({
       label: grp+"/"+kw,
       data: arr,
@@ -517,7 +530,7 @@ function filterDataRange(startIdx, endIdx){
   cbs.forEach(cb=>{
     const grp= cb.dataset.group;
     const kw= cb.dataset.keyword;
-    const fullData= groupsData[grp][kw];
+    const fullData= globalGroupsRaw[grp][kw];
     const sliced= fullData.slice(startIdx,endIdx+1);
     dsList.push({
       label: grp+"/"+kw,
@@ -616,25 +629,23 @@ function createChart2(weeks, dsList, slicedAvg, slicedMax){
  * H. 主流程
  ***************************************************************/
 async function main(){
-  // 1) 关键词
+  // 1) 加载关键词
   const keywordRaw= await parseCSV(KEYWORD_CSV_URL);
   const longData= convertWideToLong(keywordRaw.data);
   const { weeks, groups }= processLongRows(longData);
   labelsAll= weeks;
-  // 原始groups => globalGroupsRaw, 供搜索
-  globalGroupsRaw= groups;
-  // 当前 => 一开始就等于原始
-  groupsData= groups;
+  globalGroupsRaw= groups; // 原始
+  groupsData= groups;      // 当前显示
 
   // 2) 平均气温
-  const avgRaw= await parseCSV(AVG_TEMP_CSV_URL);
+  const avgRaw= await parseTempCSV(AVG_TEMP_CSV_URL);
   const avgMap= convertTempData(avgRaw.data);
 
   // 3) 最高气温
-  const maxRaw= await parseCSV(MAX_TEMP_CSV_URL);
+  const maxRaw= await parseTempCSV(MAX_TEMP_CSV_URL);
   const maxMap= convertTempData(maxRaw.data);
 
-  // 4) 对齐气温
+  // 4) 对齐
   tempAvgData= new Array(labelsAll.length).fill(NaN);
   tempMaxData= new Array(labelsAll.length).fill(NaN);
   labelsAll.forEach((wk,i)=>{
@@ -681,9 +692,6 @@ function parseCSV(url){
   });
 }
 
-/***************************************************************
- * I. 事件
- ***************************************************************/
 document.getElementById("toggleSidebar").addEventListener("click",()=>{
   document.getElementById("sidebar").classList.toggle("active");
 });
@@ -713,6 +721,9 @@ document.getElementById("btnClearSearch").addEventListener("click",()=>{
   inp.value="";
   applySearchFilter("");
 });
+
+// run on load
+main();
 </script>
 </body>
 </html>
