@@ -1,393 +1,603 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8" />
-  <title>关键词热度 & 氣温 (带调试日志)</title>
-  <!-- Papa Parse (解析CSV) -->
+  <meta charset="UTF-8">
+  <title>调试版：关键词 + 氣温可视化</title>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.2.1"></script>
+
   <style>
-    /* 重置默认样式 */
-    * {
-      box-sizing: border-box;
-    }
     body {
-      margin: 0; 
-      padding: 0;
+      margin:0; 
+      padding:0;
       font-family: sans-serif;
-      /* 允许滚动，避免第二图被挤出可视范围 */
-      overflow: auto;
+      /* 允许滚动，避免下方图表被隐藏 */
+      overflow-y:auto;
     }
     .container {
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-      padding: 10px;
+      width:100%;
+      max-width:1400px;
+      margin:0 auto;
+      padding:10px;
     }
-    .chart-box {
-      width: 100%;
-      min-height: 400px;
-      position: relative;
+    .chartBox {
+      margin-bottom:20px;
+      padding:10px;
+      border:1px solid #ccc;
     }
-    .chart-box canvas {
-      width: 100%;
-      height: 100%;
+    canvas {
+      width:100%;
+      height:500px;
+      background:#fff;
     }
-    h2 {
-      margin: 0 0 8px 0;
+    /* 侧边栏 */
+    .sidebar-toggle {
+      background:#3b5998;
+      color:#fff;
+      border:none;
+      padding:6px 10px;
+      cursor:pointer;
+      margin-right:8px;
+    }
+    .sidebarKW {
+      position:absolute;
+      top:120px; /*可以按需要调整 */
+      left:20px;
+      width:250px; 
+      height:400px;
+      background:#fafafa;
+      box-shadow:2px 2px 5px rgba(0,0,0,0.2);
+      transform:translateX(-300%);
+      transition:0.3s;
+      overflow-y:auto;
+      padding:10px;
+      box-sizing:border-box;
+      z-index:9999;
+    }
+    .sidebarKW.active {
+      transform:translateX(0);
     }
   </style>
 </head>
-
 <body>
-  <div class="container">
-    <!-- 上图：关键词热度 -->
-    <h2>关键词热度 (Y 轴反转)</h2>
-    <div class="chart-box">
-      <canvas id="chartKeywords"></canvas>
+
+<div class="container">
+  <h1>调试版：关键词 + 氣温可视化</h1>
+
+  <!-- ========== 关键词图 ========== -->
+  <div class="chartBox">
+    <h2>关键词热度</h2>
+    <button class="sidebar-toggle" id="btnToggleKwSidebar">≡ 分组选择</button>
+    <button id="btnKwRefresh">刷新关键词</button>
+    <label>开始周:</label>
+    <select id="startWeekKw"></select>
+    <label>结束周:</label>
+    <select id="endWeekKw"></select>
+    <button id="btnFilterKw">更新区间</button>
+
+    <!-- sidebar for keywords -->
+    <div class="sidebarKW" id="sidebarKw">
+      <h3>分组 
+        <button id="btnKwAll">全选</button>
+        <button id="btnKwNone">全不选</button>
+      </h3>
+      <div id="groupContainerKw"></div>
     </div>
 
-    <!-- 下图：气温 (平均 & 最高) -->
-    <h2>气温 (平均 & 最高)</h2>
-    <div class="chart-box">
-      <canvas id="chartTemp"></canvas>
-    </div>
+    <canvas id="chartKeywords"></canvas>
   </div>
 
+  <!-- ========== 氣温图 ========== -->
+  <div class="chartBox">
+    <h2>氣温 (平均 + 最高)</h2>
+    <button id="btnTempRefresh">刷新氣温</button>
+    <label>开始周:</label>
+    <select id="startWeekTemp"></select>
+    <label>结束周:</label>
+    <select id="endWeekTemp"></select>
+    <button id="btnFilterTemp">更新区间</button>
+
+    <canvas id="chartTemp"></canvas>
+  </div>
+
+</div>
+
 <script>
-/**************************************************************
- * 1) 配置你的 CSV 链接
- **************************************************************/
-// 关键词数据 (宽表)
-const KEYWORD_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTxT7pk3XLnPr87Fpq2Fii90bqh_R2jsCjO6e3dZkMLKmuw75ksYiuSce3DC7uUK5IXBEFmeKT1P7oJ/pub?output=csv";
+/*******************************************************
+ * 1. CSV URL
+ *******************************************************/
+const KW_CSV_URL   = "https://docs.google.com/spreadsheets/d/e/.../pub?output=csv";
+const AVG_CSV_URL  = "https://docs.google.com/spreadsheets/d/e/.../pub?output=csv";
+const MAX_CSV_URL  = "https://docs.google.com/spreadsheets/d/e/.../pub?output=csv";
 
-// 平均气温
-const AVG_TEMP_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQsIu0jYheUb5YE9-D0SwtL6FxkTjFwEgWaH56NdOyqYfNkcZLJGM2xp9T2wPLcF5lYFBZ3UCa7eiaj/pub?output=csv";
-
-// 最高气温
-const MAX_TEMP_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSnxZTyYhuMkeM0D0ystDYz2w0tQJZDN5yyxoy51Rl8yA23j-7nSm3gOC4SeAJnhB9_iHT_mTIVzZlR/pub?output=csv";
-
-
-/**************************************************************
- * 2) 全局变量 (Chart.js 实例、数据存储)
- **************************************************************/
-let chartKeywords;  // 上图(关键词)
-let chartTemp;      // 下图(气温)
-
-
-//////////////////////////////////////////////////////////////
-//   A. 关键词图相关 (含调试打印)
-//////////////////////////////////////////////////////////////
-
-// A.1) 加载 & 解析 关键词CSV
-async function loadKeywordData() {
-  console.log("[DEBUG] loadKeywordData() start...");
-  const rawResult = await parseCSV(KEYWORD_CSV);
-  console.log("[DEBUG] KEYWORD_CSV parse result:", rawResult);
-
-  // rawResult.data 是一个 2D 数组
-  const longData = convertWideToLong(rawResult.data);
-  console.log("[DEBUG] convertWideToLong => longData:", longData);
-
-  const { weeks, groups } = processLongRows(longData);
-  console.log("[DEBUG] processLongRows => weeks:", weeks);
-  console.log("[DEBUG] processLongRows => groups:", groups);
-
-  return { weeks, groups };
-}
-
-// A.2) 宽表 => 长表 (示例)
-function convertWideToLong(raw2D) {
-  // 第0行=分组, 第1行=关键字, 第2行起=week_label + 值
-  // 你也可以根据自己的CSV结构修改
-  console.log("[DEBUG] raw2D length:", raw2D.length);
-  if (!raw2D || raw2D.length < 3) {
-    console.warn("[WARN] raw2D行数小于3，可能数据不足！");
-  }
-
-  const rowGroup   = raw2D[0];
-  const rowKeyword = raw2D[1];
-
-  console.log("[DEBUG] rowGroup(第0行):", rowGroup);
-  console.log("[DEBUG] rowKeyword(第1行):", rowKeyword);
-
-  const out = [];
-  for (let r = 2; r < raw2D.length; r++) {
-    const row = raw2D[r];
-    if (!row[0]) {
-      console.log(`[DEBUG] row[${r}]第一列为空, 跳过`);
-      continue;
-    }
-    const fileName = row[0]; // e.g. "2023_10_15-10_21_Week_0"
-    for (let c = 1; c < row.length; c++) {
-      const grp = rowGroup[c];
-      const kw  = rowKeyword[c];
-      const val = parseFloat(row[c] || 0);
-      out.push({
-        week_label: fileName,
-        group: grp,
-        keyword: kw,
-        value: val
-      });
-    }
-  }
-  return out;
-}
-
-// A.3) 长表 => weeks + groupsData
-function processLongRows(longData) {
-  const setWeeks = new Set();
-  longData.forEach(it => setWeeks.add(it.week_label));
-  const weeks = Array.from(setWeeks).sort();
-
-  const gData = {}; // { group => { keyword => [array], ... } }
-  const count = weeks.length;
-
-  longData.forEach(it => {
-    const w = it.week_label;
-    const g = it.group;
-    const k = it.keyword;
-    const v = it.value;
-    if (!gData[g]) {
-      gData[g] = {};
-    }
-    if (!gData[g][k]) {
-      gData[g][k] = new Array(count).fill(NaN);
-    }
-    const idx = weeks.indexOf(w);
-    gData[g][k][idx] = v;
-  });
-
-  // 排序 group & keyword
-  const sorted = {};
-  Object.keys(gData).sort().forEach(gName => {
-    const kwMap = gData[gName];
-    const sortedKwMap = {};
-    Object.keys(kwMap).sort().forEach(kName => {
-      sortedKwMap[kName] = kwMap[kName];
-    });
-    sorted[gName] = sortedKwMap;
-  });
-
-  return { weeks, groups: sorted };
-}
-
-// A.4) 构造关键词图 (Y 轴反转)
-function createKeywordChart(weeks, groupsData) {
-  console.log("[DEBUG] createKeywordChart => weeks.length:", weeks.length);
-  console.log("[DEBUG] createKeywordChart => groupsData:", groupsData);
-
-  const ctx = document.getElementById("chartKeywords").getContext("2d");
-  if (chartKeywords) chartKeywords.destroy();
-
-  // 构造 datasets
-  const dsList = [];
-  const colorList = [
-    "red","blue","green","orange","purple","brown","teal","magenta",
-    "#e6194b","#3cb44b","#ffe119","#0082c8","#f58231","#911eb4","#46f0f0",
-    "#f032e6","#d2f53c","#fabebe","#008080","#e6beff","#aa6e28","#fffac8",
-    "#800000","#aaffc3","#808000","#ffd8b1","#000080","#808080","#000000"
-  ];
-  let idx=0;
-  Object.keys(groupsData).forEach(g => {
-    const kwMap = groupsData[g];
-    Object.keys(kwMap).forEach(k => {
-      dsList.push({
-        label: g + "/" + k,
-        data: kwMap[k],
-        borderColor: colorList[idx % colorList.length],
-        fill: false,
-        tension: 0.1,
-        pointRadius: 2
-      });
-      idx++;
-    });
-  });
-
-  console.log("[DEBUG] createKeywordChart => dsList:", dsList);
-
-  chartKeywords = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: weeks,
-      datasets: dsList
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: {
-          title: { display: true, text: "周" }
-        },
-        y: {
-          reverse: true, // 数值小在上
-          title: { display: true, text: "热度(数值小→上)" }
-        }
-      }
-    }
-  });
-}
-
-
-//////////////////////////////////////////////////////////////
-//   B. 氣温图相关 (平均 & 最高) (含调试打印)
-//////////////////////////////////////////////////////////////
-
-// B.1) 并行加载平均气温CSV + 最高气温CSV => 2条线
-async function loadTempData() {
-  console.log("[DEBUG] loadTempData() start...");
-  const [avgRes, maxRes] = await Promise.all([
-    parseCSV(AVG_TEMP_CSV),
-    parseCSV(MAX_TEMP_CSV)
-  ]);
-  console.log("[DEBUG] AVG_TEMP_CSV parse:", avgRes);
-  console.log("[DEBUG] MAX_TEMP_CSV parse:", maxRes);
-
-  // 把它们各自解析成 { week_label => value } 结构
-  const avgMap = convertTempCSV(avgRes.data, "AvgTemp");
-  const maxMap = convertTempCSV(maxRes.data, "MaxTemp");
-  console.log("[DEBUG] avgMap =>", avgMap);
-  console.log("[DEBUG] maxMap =>", maxMap);
-
-  // 合并所有周
-  const allWeeks = new Set([...Object.keys(avgMap), ...Object.keys(maxMap)]);
-  const sortedWeeks = Array.from(allWeeks).sort();
-  console.log("[DEBUG] sortedWeeks =>", sortedWeeks);
-
-  const avgData = [];
-  const maxData = [];
-  sortedWeeks.forEach(wk => {
-    avgData.push(avgMap[wk] ?? NaN);
-    maxData.push(maxMap[wk] ?? NaN);
-  });
-
-  console.log("[DEBUG] avgData =>", avgData);
-  console.log("[DEBUG] maxData =>", maxData);
-
-  return { weeks: sortedWeeks, avg: avgData, max: maxData };
-}
-
-// B.2) 解析气温CSV(示例：假设宽表第一行=标题, 后面行=week_label, value)
-function convertTempCSV(raw2D, debugLabel) {
-  console.log(`[DEBUG] convertTempCSV(${debugLabel}) => raw2D.length:`, raw2D.length);
-  if (!raw2D || raw2D.length < 2) {
-    console.warn(`[WARN] CSV(${debugLabel}) 行数不足, 可能没有数据！`);
-  }
-
-  // 跳过第一行(标题)
-  const outMap = {};
-  for (let r = 1; r < raw2D.length; r++) {
-    const row = raw2D[r];
-    if (!row[0]) {
-      console.log(`[DEBUG] row[${r}]没有week_label,跳过 in ${debugLabel}`);
-      continue;
-    }
-    const wk = row[0];
-    const val= parseFloat(row[1] || 0);
-    outMap[wk] = val;
-  }
-  return outMap;
-}
-
-// B.3) 构造氣温图 (2条线：平均 & 最高)
-function createTempChart(weeks, avgData, maxData) {
-  console.log("[DEBUG] createTempChart => weeks.length:", weeks.length);
-  console.log("[DEBUG] avgData =>", avgData);
-  console.log("[DEBUG] maxData =>", maxData);
-
-  const ctx = document.getElementById("chartTemp").getContext("2d");
-  if (chartTemp) chartTemp.destroy();
-
-  const dsList = [
-    {
-      label: "平均气温",
-      data: avgData,
-      borderColor: "blue",
-      fill: false,
-      tension: 0.1
-    },
-    {
-      label: "最高气温",
-      data: maxData,
-      borderColor: "red",
-      fill: false,
-      tension: 0.1
-    }
-  ];
-
-  console.log("[DEBUG] createTempChart => dsList:", dsList);
-
-  chartTemp = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: weeks,
-      datasets: dsList
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: {
-          title: { display:true, text: "周" }
-        },
-        y: {
-          reverse: false,
-          title: { display:true, text: "摄氏度(℃)" }
-        }
-      }
-    }
-  });
-}
-
-
-//////////////////////////////////////////////////////////////
-//   C. 通用函数
-//////////////////////////////////////////////////////////////
+/*******************************************************
+ * 2. Papa Parse wrapper
+ *******************************************************/
 function parseCSV(url) {
-  console.log("[DEBUG] parseCSV =>", url);
+  console.log("开始加载CSV: ", url);
   return new Promise((resolve, reject) => {
     Papa.parse(url, {
       download: true,
-      complete: res => {
-        console.log("[DEBUG] parseCSV complete for:", url, "=> res:", res);
-        resolve(res);
+      complete: results => {
+        console.log("CSV加载成功:", url, results.data.length, "行");
+        resolve(results.data);
       },
       error: err => {
-        console.error("[ERROR] parseCSV error for:", url, err);
+        console.error("CSV加载失败:", url, err);
         reject(err);
       }
     });
   });
 }
 
+/*******************************************************
+ * ========== 关键词(上图) ==========
+ *******************************************************/
+let chartKw;
+let labelsKw=[];
+let groupsKw={};
 
-//////////////////////////////////////////////////////////////
-//   D. 主流程 (含调试打印)
-//////////////////////////////////////////////////////////////
-window.addEventListener("DOMContentLoaded", async () => {
-  console.log("[DEBUG] DOMContentLoaded, start main flow...");
-
-  // 1) 关键词图
+async function loadKeywords(){
   try {
-    const { weeks, groups } = await loadKeywordData();
-    console.log("[DEBUG] => createKeywordChart with weeks.size:", weeks.length);
-    createKeywordChart(weeks, groups);
-  } catch(e) {
-    console.error("[ERROR] loadKeywordData failed:", e);
-  }
+    console.log("准备加载关键词CSV...");
+    const rawData= await parseCSV(KW_CSV_URL);
+    console.log("关键词rawData:", rawData);
 
-  // 2) 氣温图
-  try {
-    const { weeks: w2, avg, max } = await loadTempData();
-    console.log("[DEBUG] => createTempChart with weeks.size:", w2.length);
-    createTempChart(w2, avg, max);
-  } catch(e) {
-    console.error("[ERROR] loadTempData failed:", e);
-  }
+    // 转宽表->长表
+    const longData= convertWideKwToLong(rawData);
+    console.log("关键词长表:", longData.slice(0,10),"...");
 
-  console.log("[DEBUG] main flow finished.");
+    const { weeks, groups }= processLongRowsKw(longData);
+    labelsKw= weeks;
+    groupsKw= groups;
+    console.log("关键词 weeks大小:", weeks.length, " groups:", Object.keys(groups).length);
+
+    // 渲染sidebar
+    renderSidebarKw(groupsKw);
+
+    // dropdown
+    const startSel= document.getElementById("startWeekKw");
+    const endSel= document.getElementById("endWeekKw");
+    startSel.innerHTML="";
+    endSel.innerHTML="";
+    weeks.forEach((wk,i)=>{
+      const opt1= document.createElement("option");
+      opt1.value= i;
+      opt1.text= displayWeekName(wk);
+      startSel.appendChild(opt1);
+
+      const opt2= document.createElement("option");
+      opt2.value= i;
+      opt2.text= displayWeekName(wk);
+      endSel.appendChild(opt2);
+    });
+    startSel.value=0;
+    endSel.value= weeks.length-1;
+
+    updateLinesKw(); 
+  } catch(e) {
+    console.error("关键词加载出现错误:", e);
+  }
+}
+
+function convertWideKwToLong(rawData){
+  const rowGrp= rawData[0];
+  const rowKw = rawData[1];
+  const result=[];
+  for(let r=2; r<rawData.length; r++){
+    const row= rawData[r];
+    const fileName= row[0];
+    for(let c=1; c< row.length; c++){
+      const grp= rowGrp[c];
+      const kw= rowKw[c];
+      const val= Number(row[c]||0);
+      result.push({
+        "文件名称": fileName,
+        group: grp,
+        keyword: kw,
+        value: val
+      });
+    }
+  }
+  return result;
+}
+
+function processLongRowsKw(longData){
+  const setWeeks= new Set();
+  longData.forEach(it=> setWeeks.add(it["文件名称"]));
+  const weeks= Array.from(setWeeks).sort();
+  const gData={};
+  const total= weeks.length;
+  longData.forEach(it=>{
+    const w= it["文件名称"];
+    const g= it.group;
+    const k= it.keyword;
+    const v= it.value;
+    if(!gData[g]) gData[g]={};
+    if(!gData[g][k]) gData[g][k]= new Array(total).fill(NaN);
+    const idx= weeks.indexOf(w);
+    gData[g][k][idx]= v;
+  });
+  // sort
+  const sorted={};
+  Object.keys(gData).sort().forEach(grp=>{
+    const kwMap= gData[grp];
+    const sortedKw={};
+    Object.keys(kwMap).sort().forEach(k=>{
+      sortedKw[k]= kwMap[k];
+    });
+    sorted[grp]= sortedKw;
+  });
+  return { weeks, groups: sorted};
+}
+
+function renderSidebarKw(gData){
+  const container= document.getElementById("groupContainerKw");
+  container.innerHTML="";
+  Object.keys(gData).forEach(grp=>{
+    const details= document.createElement("details");
+    details.className="group-panel";
+
+    const summary= document.createElement("summary");
+    summary.style.cursor="pointer";
+    const sumSpan= document.createElement("span");
+    sumSpan.textContent= grp;
+    summary.appendChild(sumSpan);
+
+    // group-level 全选/全不选
+    const allBtn= document.createElement("button");
+    allBtn.textContent="全选";
+    allBtn.style.fontSize="12px";
+    allBtn.addEventListener("click",(e)=>{
+      e.stopPropagation();
+      setGroupCheckKw(grp,true);
+    });
+    summary.appendChild(allBtn);
+
+    const noneBtn= document.createElement("button");
+    noneBtn.textContent="全不选";
+    noneBtn.style.fontSize="12px";
+    noneBtn.addEventListener("click",(e)=>{
+      e.stopPropagation();
+      setGroupCheckKw(grp,false);
+    });
+    summary.appendChild(noneBtn);
+
+    details.appendChild(summary);
+
+    const kwMap= gData[grp];
+    Object.keys(kwMap).forEach(kw=>{
+      const lb= document.createElement("label");
+      lb.style.display="block";
+      const cb= document.createElement("input");
+      cb.type="checkbox";
+      cb.checked=true;
+      cb.dataset.group=grp;
+      cb.dataset.keyword=kw;
+
+      lb.appendChild(cb);
+      lb.append(" "+kw);
+      details.appendChild(lb);
+    });
+
+    container.appendChild(details);
+  });
+
+  container.addEventListener("change",(e)=>{
+    if(e.target.type==="checkbox"){
+      updateLinesKw();
+    }
+  });
+}
+
+function setGroupCheckKw(grp,isCheck){
+  const cbs= document.querySelectorAll(`#groupContainerKw input[data-group="${grp}"]`);
+  cbs.forEach(cb=> cb.checked=isCheck);
+  updateLinesKw();
+}
+function setAllCheckKw(isCheck){
+  const cbs= document.querySelectorAll(`#groupContainerKw input[type='checkbox']`);
+  cbs.forEach(cb=> cb.checked=isCheck);
+  updateLinesKw();
+}
+function updateLinesKw(){
+  const cbs= document.querySelectorAll(`#groupContainerKw input[type='checkbox']:checked`);
+  const dsList=[];
+  const colorList=["#e6194b","#3cb44b","#ffe119","#0082c8","#f58231","#911eb4",
+    "#46f0f0","#f032e6","#d2f53c","#fabebe","#008080","#e6beff","#aa6e28","#fffac8",
+    "#800000","#aaffc3","#808000","#ffd8b1","#000080","#808080","#000000"
+  ];
+  let idx=0;
+  cbs.forEach(cb=>{
+    const g= cb.dataset.group;
+    const k= cb.dataset.keyword;
+    dsList.push({
+      label: g+"/"+k,
+      data: groupsKw[g][k],
+      borderColor: colorList[idx%colorList.length],
+      fill:false,
+      tension:0.1,
+      pointRadius:2
+    });
+    idx++;
+  });
+  console.log("关键词: 勾选datasets数量:", dsList.length);
+  createChartKeywords(labelsKw, dsList);
+}
+
+function createChartKeywords(weeks, dsList){
+  const ctx= document.getElementById("chartKeywords").getContext("2d");
+  if(chartKw) chartKw.destroy();
+
+  chartKw= new Chart(ctx, {
+    type:'line',
+    data:{
+      labels: weeks,
+      datasets: dsList
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      scales:{
+        x:{
+          title:{display:true,text:"周"},
+          ticks:{
+            color:"#333", font:{size:14},
+            autoSkip:false,maxRotation:45,minRotation:45
+          }
+        },
+        y:{
+          reverse:true, // 让小值在上
+          ticks:{
+            color:"#333",font:{size:14},
+            callback:function(value){
+              if(value>=1000)return(value/1000)+"k";
+              return value;
+            }
+          }
+        }
+      },
+      plugins:{
+        tooltip:{
+          callbacks:{
+            label:function(context){
+              const val=context.parsed.y;
+              let str=context.dataset.label+": "+val;
+              const idx=context.dataIndex;
+              // 环比
+              if(idx>0){
+                const prevVal=context.dataset.data[idx-1];
+                if(!isNaN(prevVal)&&prevVal!==0){
+                  const diff= val-prevVal;
+                  const ratio= diff/prevVal*100;
+                  str+=` | 环比:${diff.toFixed(0)}(${ratio.toFixed(2)}%)`;
+                }
+              }
+              // 同比
+              const yoyIdx= idx-52;
+              if(yoyIdx>=0){
+                const yoyVal=context.dataset.data[yoyIdx];
+                if(!isNaN(yoyVal)&&yoyVal!==0){
+                  const yoyDiff= val-yoyVal;
+                  const yoyRatio= yoyDiff/yoyVal*100;
+                  str+=` | 同比:${yoyDiff.toFixed(0)}(${yoyRatio.toFixed(2)}%)`;
+                }
+              }
+              return str;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function displayWeekName(orig){
+  return orig.replace("_Week_"," W");
+}
+function filterRangeKw(s,e){
+  const start=Math.min(s,e);
+  const end=Math.max(s,e);
+  // slice
+  const cbs= document.querySelectorAll(`#groupContainerKw input[type='checkbox']:checked`);
+  const dsList=[];
+  const colorList=["#e6194b","#3cb44b","#ffe119","#0082c8","#f58231","#911eb4",
+    "#46f0f0","#f032e6","#d2f53c","#fabebe","#008080","#e6beff","#aa6e28","#fffac8",
+    "#800000","#aaffc3","#808000","#ffd8b1","#000080","#808080","#000000"
+  ];
+  let i=0;
+  cbs.forEach(cb=>{
+    const g= cb.dataset.group;
+    const k= cb.dataset.keyword;
+    const fullArr= groupsKw[g][k];
+    const sliced= fullArr.slice(start,end+1);
+    dsList.push({
+      label: g+"/"+k,
+      data: sliced,
+      borderColor: colorList[i%colorList.length],
+      fill:false,tension:0.1,pointRadius:2
+    });
+    i++;
+  });
+  const slicedWeeks= labelsKw.slice(start,end+1);
+  createChartKeywords(slicedWeeks, dsList);
+}
+
+/***************************************************************
+ * ========== 下图: 氣温 ==========
+ ***************************************************************/
+let chartTemp;
+let labelsTemp=[];
+let avgData=[];
+let maxData=[];
+
+async function loadTemperature(){
+  console.log("准备加载气温: AVG & MAX CSV...");
+  try{
+    const rawAvg= await parseCSV(AVG_CSV_URL);
+    console.log("rawAvg行数:", rawAvg.length);
+    const rawMax= await parseCSV(MAX_CSV_URL);
+    console.log("rawMax行数:", rawMax.length);
+
+    // 假设 row0= ["文件名称","avg"] / row1= [ "2023_01_01_Week_0", 12.3 ] ...
+    let mapAvg={};
+    for(let r=1; r<rawAvg.length; r++){
+      const row= rawAvg[r];
+      const fileName=row[0];
+      const val= Number(row[1]||0);
+      mapAvg[fileName]= val;
+    }
+    let mapMax={};
+    for(let r=1; r<rawMax.length; r++){
+      const row= rawMax[r];
+      const fileName=row[0];
+      const val= Number(row[1]||0);
+      mapMax[fileName]= val;
+    }
+
+    // gather all weeks
+    const setAll= new Set([...Object.keys(mapAvg),...Object.keys(mapMax)]);
+    const allWeeks= Array.from(setAll).sort();
+    labelsTemp= allWeeks;
+
+    avgData=[];
+    maxData=[];
+    allWeeks.forEach(fn=>{
+      avgData.push( mapAvg[fn] || NaN );
+      maxData.push( mapMax[fn] || NaN );
+    });
+
+    // init select
+    const startSel= document.getElementById("startWeekTemp");
+    const endSel  = document.getElementById("endWeekTemp");
+    startSel.innerHTML="";
+    endSel.innerHTML="";
+    allWeeks.forEach((wk,i)=>{
+      const o1= document.createElement("option");
+      o1.value=i; o1.text= wk.replace("_Week_"," W");
+      startSel.appendChild(o1);
+
+      const o2= document.createElement("option");
+      o2.value=i; o2.text= wk.replace("_Week_"," W");
+      endSel.appendChild(o2);
+    });
+    startSel.value=0;
+    endSel.value= allWeeks.length-1;
+
+    createChartTemp(allWeeks, avgData, maxData);
+
+  } catch(e){
+    console.error("气温加载出错:", e);
+  }
+}
+
+function createChartTemp(weeks, arrAvg, arrMax){
+  const ctx= document.getElementById("chartTemp").getContext("2d");
+  if(chartTemp) chartTemp.destroy();
+
+  const ds= [
+    {
+      label:"平均气温",
+      data: arrAvg,
+      borderColor:"orange",
+      fill:false,
+      tension:0.1,
+      pointRadius:2
+    },
+    {
+      label:"最高气温",
+      data: arrMax,
+      borderColor:"red",
+      fill:false,
+      tension:0.1,
+      pointRadius:2
+    }
+  ];
+
+  chartTemp= new Chart(ctx, {
+    type:'line',
+    data:{
+      labels: weeks,
+      datasets: ds
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      scales:{
+        x:{
+          title:{display:true,text:"周"},
+          ticks:{
+            color:"#333",font:{size:14},
+            autoSkip:false,maxRotation:45,minRotation:45
+          },
+          grid:{color:"#ccc"}
+        },
+        y:{
+          beginAtZero:false,
+          ticks:{
+            color:"#333",font:{size:14}
+          },
+          grid:{color:"#ccc"}
+        }
+      },
+      interaction:{mode:'index',intersect:false}
+    }
+  });
+}
+
+function filterRangeTemp(s,e){
+  const start=Math.min(s,e);
+  const end=Math.max(s,e);
+  const subWeeks= labelsTemp.slice(start,end+1);
+  const subAvg= avgData.slice(start,end+1);
+  const subMax= maxData.slice(start,end+1);
+  createChartTemp(subWeeks, subAvg, subMax);
+}
+
+/***************************************************************
+ * 入口
+ ***************************************************************/
+async function main(){
+  console.log("=== main start ===");
+  await loadKeywords();
+  await loadTemperature();
+  console.log("=== main done ===");
+}
+
+/***************************************************************
+ * 事件
+ ***************************************************************/
+// 侧边栏
+document.getElementById("btnToggleKwSidebar").addEventListener("click",()=>{
+  document.getElementById("sidebarKw").classList.toggle("active");
 });
+
+// 关键词
+document.getElementById("btnKwRefresh").addEventListener("click",()=>{
+  loadKeywords();
+});
+document.getElementById("btnFilterKw").addEventListener("click",()=>{
+  const s= parseInt(document.getElementById("startWeekKw").value);
+  const e= parseInt(document.getElementById("endWeekKw").value);
+  filterRangeKw(s,e);
+});
+document.getElementById("btnKwAll").addEventListener("click",()=> setAllCheckKw(true));
+document.getElementById("btnKwNone").addEventListener("click",()=> setAllCheckKw(false));
+
+// 氣温
+document.getElementById("btnTempRefresh").addEventListener("click",()=>{
+  loadTemperature();
+});
+document.getElementById("btnFilterTemp").addEventListener("click",()=>{
+  const s= parseInt(document.getElementById("startWeekTemp").value);
+  const e= parseInt(document.getElementById("endWeekTemp").value);
+  filterRangeTemp(s,e);
+});
+
+// onload
+window.onload= ()=>{
+  main().catch(err=> console.error("main捕获错误:", err));
+};
 </script>
 
 </body>
