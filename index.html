@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8" />
-  <title>关键词热度 + 气温 (双Y轴, 样式优化)</title>
+  <title>KeyWord热度 + 氣温 (双Y轴, 样式优化)</title>
   <!-- Papa Parse (解析CSV) -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
   <!-- Chart.js -->
@@ -76,9 +76,9 @@
 /***************************************************************
  * 1) CSV链接配置 (关键词 + 平均气温 + 最高气温)
  ***************************************************************/
-const KEYWORD_CSV_URL = "...";
-const AVG_TEMP_CSV_URL = "...";
-const MAX_TEMP_CSV_URL = "...";
+const KEYWORD_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTxT7pk3XLnPr87Fpq2Fii90bqh_R2jsCjO6e3dZkMLKmuw75ksYiuSce3DC7uUK5IXBEFmeKT1P7oJ/pub?output=csv";
+const AVG_TEMP_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQsIu0jYheUb5YE9-D0SwtL6FxkTjFwEgWaH56NdOyqYfNkcZLJGM2xp9T2wPLcF5lYFBZ3UCa7eiaj/pub?output=csv";
+const MAX_TEMP_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSnxZTyYhuMkeM0D0ystDYz2w0tQJZDN5yyxoy51Rl8yA23j-7nSm3gOC4SeAJnhB9_iHT_mTIVzZlR/pub?output=csv";
 
 /***************************************************************
  * 全局变量
@@ -145,7 +145,6 @@ function processLongRows(longData){
     });
     sorted[gName]= sortedKwMap;
   });
-
   return { weeks, groups: sorted };
 }
 
@@ -171,7 +170,7 @@ function convertTempData(raw2D){
     const val= parseFloat(row[1]||0);
     map[wk]= val;
   }
-  return map; // { "2023_10_15-10_21_Week_0": 18.5, ... }
+  return map;
 }
 
 /***************************************************************
@@ -191,7 +190,7 @@ function createChart(weeks, dsList){
     fill:false,
     tension:0.1,
     pointRadius:0, // 不要点
-    yAxisID:"y2"
+    yAxisID: "y2"
   });
   dsList.push({
     label: "最高气温",
@@ -202,7 +201,7 @@ function createChart(weeks, dsList){
     fill:false,
     tension:0.1,
     pointRadius:0,
-    yAxisID:"y2"
+    yAxisID: "y2"
   });
 
   chart= new Chart(ctx, {
@@ -218,49 +217,45 @@ function createChart(weeks, dsList){
         x: {
           title:{ display:true, text:"周" }
         },
+        // 左轴 (关键词, 反转)
         y: {
           reverse:true,
           title:{ display:true, text:"关键词热度(数值小→上)" }
         },
+        // 右轴 (气温, 正常)
         y2: {
           type:"linear",
           position:"right",
           reverse:false,
           title:{ display:true, text:"气温(℃)" },
-          grid: {
-            drawOnChartArea:false
-          }
+          grid: { drawOnChartArea:false }
         }
       },
       plugins: {
         legend: {
-          labels: {
-            font: { size:16 }
-          }
+          labels: { font:{ size:16 } }
         },
         tooltip: {
           titleFont: { size:16 },
           bodyFont: { size:16 },
           callbacks: {
             label: function(context) {
-              // 原本的 label
               const val= context.parsed.y;
               let str= context.dataset.label + ": " + val;
 
-              // 如果是气温线 (yAxisID=='y2'), 加 "°C"
-              if(context.dataset.yAxisID==="y2") {
+              // 如果是气温 => 加 "°C"
+              if(context.dataset.yAxisID==="y2"){
                 str+= "°C";
               }
 
-              // 显示“去年同周” yoy
+              // yoy
               const yoyIdx= context.dataIndex - 52;
-              if(yoyIdx>=0) {
+              if(yoyIdx>=0){
                 const yoyVal= context.dataset.data[yoyIdx];
-                if(!isNaN(yoyVal)) {
+                if(!isNaN(yoyVal)){
                   str+= " (去年: "+ yoyVal.toFixed(2)+"°C)";
                 }
               }
-
               return str;
             }
           }
@@ -271,7 +266,7 @@ function createChart(weeks, dsList){
 }
 
 /***************************************************************
- * D. 渲染侧边栏(关键词)
+ * D. 侧边栏(关键词)
  ***************************************************************/
 function renderGroupSidebar(gData){
   const container= document.getElementById("groupContainer");
@@ -279,8 +274,6 @@ function renderGroupSidebar(gData){
 
   Object.keys(gData).forEach(grp=>{
     const details= document.createElement("details");
-    details.className="group-panel";
-
     const summary= document.createElement("summary");
     summary.textContent= grp;
     details.appendChild(summary);
@@ -319,7 +312,7 @@ function setAllCheck(isCheck){
 }
 
 /***************************************************************
- * E. 关键词 => dsList => createChart
+ * E. updateVisibleLines => 构造关键词 dsList => createChart
  ***************************************************************/
 function updateVisibleLines(){
   const cbs= document.querySelectorAll(`#groupContainer input[type='checkbox']:checked`);
@@ -333,9 +326,10 @@ function updateVisibleLines(){
   cbs.forEach(cb=>{
     const grp= cb.dataset.group;
     const kw= cb.dataset.keyword;
+    const arr= groupsData[grp][kw];
     dsList.push({
       label: grp+"/"+kw,
-      data: groupsData[grp][kw],
+      data: arr,
       borderColor: colorList[idx%colorList.length],
       fill:false,
       tension:0.1,
@@ -379,16 +373,13 @@ function filterDataRange(startIdx, endIdx){
     i++;
   });
   const slicedWeeks= labelsAll.slice(startIdx,endIdx+1);
+
   // 同步截取气温
   const slicedAvg= tempAvgData.slice(startIdx,endIdx+1);
   const slicedMax= tempMaxData.slice(startIdx,endIdx+1);
 
-  // createChart
-  // 需要一个局部createChart? => 只要让createChart支持第三第四参数
   createChart2(slicedWeeks, dsList, slicedAvg, slicedMax);
 }
-
-// 这里写个专用函数, 不覆盖global
 function createChart2(weeks, dsList, slicedAvg, slicedMax){
   const ctx= document.getElementById("myChart").getContext("2d");
   if(chart) chart.destroy();
@@ -444,7 +435,6 @@ function createChart2(weeks, dsList, slicedAvg, slicedMax){
             label: function(context){
               const val= context.parsed.y;
               let str= context.dataset.label + ": " + val;
-              // 如果是气温 => 加 "°C"
               if(context.dataset.yAxisID==="y2"){
                 str+= "°C";
               }
