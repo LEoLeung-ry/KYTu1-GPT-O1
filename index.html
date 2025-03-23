@@ -2,12 +2,11 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8" />
-  <title>KeyWord热度 + 氣温 + 搜索 + 优化</title>
+  <title>KeyWord热度 + 氣温 + 搜索 + 最近一周数值</title>
   <!-- Papa Parse (解析CSV) -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.2.1"></script>
-
   <style>
     html, body {
       margin: 0;
@@ -17,15 +16,13 @@
       overflow: auto; /* 允许滚动 */
     }
     .sidebar-toggle {
-      position: fixed;
-      left: 0; top: 0;
+      position: fixed; left: 0; top: 0;
       background: #3b5998; color: #fff;
       padding: 8px 12px; border: none; cursor: pointer;
       z-index: 9999;
     }
     .sidebar {
-      position: fixed;
-      left: 0; top: 0;
+      position: fixed; left: 0; top: 0;
       width: 280px; height: 100vh;
       background: #fafafa;
       box-shadow: 2px 0 5px rgba(0,0,0,0.2);
@@ -35,8 +32,8 @@
       box-sizing: border-box;
       overflow-y: auto;
       z-index: 9998;
-      /* (1) 给侧边栏留出上边距，避免被左上角按钮挡住 */
-      padding-top: 50px; 
+      /* 给侧边栏留上边距，避免被左上角按钮挡住 */
+      padding-top: 50px;
     }
     .sidebar.active {
       transform: translateX(0);
@@ -68,23 +65,19 @@
     summary button {
       font-size: 12px; cursor: pointer; margin-left: 8px;
     }
-
-    /* 让关键词label一行一个 */
+    /* 关键词一行一个 */
     label {
       display: block;
-      margin-left: 10px; /* 让关键字稍微缩进，看起来层次更清晰 */
+      margin-left: 10px;
     }
 
     #noMatchMsg {
-      display: none;
-      color: #999;
-      margin-top: 8px;
+      display: none; color: #999; margin-top: 8px;
     }
 
     .main-area {
       margin-left: 60px;
-      display: flex;
-      flex-direction: column;
+      display: flex; flex-direction: column;
       height: 100vh;
     }
     .topbar {
@@ -96,7 +89,8 @@
       flex: 1; position: relative; overflow: auto;
     }
     #myChart {
-      min-width: 1200px; min-height: 600px;
+      min-width: 1200px;
+      min-height: 600px;
     }
   </style>
 </head>
@@ -124,7 +118,7 @@
 
   <div class="main-area">
     <div class="topbar">
-      <h1 style="margin:0; flex:1;">KeyWord热度 + 氣温 + 搜索 + 优化</h1>
+      <h1 style="margin:0; flex:1;">KeyWord热度 + 氣温 + 搜索 + 最近一周数值</h1>
       <button id="btnRefresh">刷新数据</button>
       <label>开始周:</label>
       <select id="startWeek"></select>
@@ -139,7 +133,7 @@
 
 <script>
 /***************************************************************
- * 1) CSV链接 (请改成你的真实链接)
+ * 1) CSV链接 (改成你自己的)
  ***************************************************************/
 const KEYWORD_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTxT7pk3XLnPr87Fpq2Fii90bqh_R2jsCjO6e3dZkMLKmuw75ksYiuSce3DC7uUK5IXBEFmeKT1P7oJ/pub?output=csv";
 const AVG_TEMP_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQsIu0jYheUb5YE9-D0SwtL6FxkTjFwEgWaH56NdOyqYfNkcZLJGM2xp9T2wPLcF5lYFBZ3UCa7eiaj/pub?output=csv";
@@ -150,8 +144,8 @@ const MAX_TEMP_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSnxZT
  ***************************************************************/
 let chart;
 let labelsAll = [];
-let groupsData = {};      // 用于“当前显示”的分组/关键词
-let globalGroupsRaw = {}; // 用于“原始全部”分组/关键词, 供搜索过滤
+let groupsData = {};      // 当前显示
+let globalGroupsRaw = {}; // 原始(搜索还原)
 let tempAvgData = [];
 let tempMaxData = [];
 
@@ -190,7 +184,7 @@ function processLongRows(longData){
   const weeks= Array.from(setWeeks).sort();
 
   const gData={};
-  const count=weeks.length;
+  const count= weeks.length;
   longData.forEach(it=>{
     const w= it.week_label;
     const g= it.group;
@@ -304,6 +298,7 @@ function createChart(weeks, dsList){
               if(context.dataset.yAxisID==="y2"){
                 str+= "°C";
               }
+              // yoy
               const yoyIdx= context.dataIndex - 52;
               if(yoyIdx>=0){
                 const yoyVal= context.dataset.data[yoyIdx];
@@ -318,6 +313,16 @@ function createChart(weeks, dsList){
       }
     }
   });
+}
+
+/***************************************************************
+ * D. 在关键词后面显示“(最近一周数值)”
+ ***************************************************************/
+function computeLatestValue(arr){
+  // arr最后一个元素 => arr[arr.length-1]
+  if(arr.length===0) return NaN;
+  const lastVal= arr[arr.length-1];
+  return lastVal; // 可能是NaN
 }
 
 /***************************************************************
@@ -339,7 +344,7 @@ function renderGroupSidebar(gData){
     const summary= document.createElement("summary");
     summary.textContent= grp;
 
-    // (可选) 分组内的全选/全不选
+    // 分组内 全选/全不选
     const allBtn= document.createElement("button");
     allBtn.textContent="全选";
     allBtn.style.fontSize="12px";
@@ -364,15 +369,23 @@ function renderGroupSidebar(gData){
     const kwMap= gData[grp];
     Object.keys(kwMap).forEach(kw=>{
       const lb= document.createElement("label");
-      // label { display:block } => each line
       const cb= document.createElement("input");
       cb.type="checkbox";
       cb.checked=true;
-      cb.dataset.group=grp;
-      cb.dataset.keyword=kw;
+      cb.dataset.group= grp;
+      cb.dataset.keyword= kw;
+
+      // 计算“最近一周”数值
+      const arr= kwMap[kw];
+      const lastVal= computeLatestValue(arr);
+      let lastStr= "";
+      if(!isNaN(lastVal)){
+        // toFixed(1)
+        lastStr= " ("+lastVal.toFixed(1)+")";
+      }
 
       lb.appendChild(cb);
-      lb.append(" "+kw);
+      lb.append(" "+kw+lastStr);
       details.appendChild(lb);
     });
 
@@ -383,14 +396,13 @@ function renderGroupSidebar(gData){
     noMatchMsg.style.display="";
   }
 
-  // 重新绑定"change"事件
   container.addEventListener("change",(e)=>{
     if(e.target.type==="checkbox") updateVisibleLines();
   });
 }
 
 /***************************************************************
- * D2. 搜索(保留原结构, 仅隐藏/显示)
+ * D2. 搜索(仅隐藏不匹配)
  ***************************************************************/
 function applySearchFilter(term){
   const noMatchMsg= document.getElementById("noMatchMsg");
@@ -401,10 +413,9 @@ function applySearchFilter(term){
 
   const groupPanels= document.querySelectorAll(".group-panel");
   groupPanels.forEach(panel=>{
-    // summary 里的第一个文本是组名
     const summary= panel.querySelector("summary");
     if(!summary) return;
-    const grpName= summary.childNodes[0].textContent; // "冷感... "
+    const grpName= summary.childNodes[0].textContent;
     const grpLower= grpName.toLowerCase();
     const labels= panel.querySelectorAll("label");
 
@@ -412,7 +423,7 @@ function applySearchFilter(term){
     let matchedKw=0;
 
     labels.forEach(lb=>{
-      const txt= lb.textContent.toLowerCase(); // " 冷风机..."
+      const txt= lb.textContent.toLowerCase();
       if(s.length===0 || groupMatched || txt.includes(s)){
         lb.style.display="";
         matchedKw++;
@@ -422,11 +433,9 @@ function applySearchFilter(term){
     });
 
     if(s.length===0){
-      // 无搜索 => 全部显示
       panel.style.display="";
       visibleCount++;
     } else {
-      // if group matched or matchedKw>0 => show
       if(groupMatched || matchedKw>0){
         panel.style.display="";
         visibleCount++;
@@ -473,7 +482,7 @@ function updateVisibleLines(){
 }
 
 /***************************************************************
- * E2. setGroupCheck => 全选/全不选某个分组
+ * E2. setGroupCheck => 全选/全不选某分组
  ***************************************************************/
 function setGroupCheck(groupName, isCheck){
   const cbs= document.querySelectorAll(`#groupContainer input[data-group="${groupName}"]`);
@@ -607,13 +616,15 @@ function createChart2(weeks, dsList, slicedAvg, slicedMax){
  * H. 主流程
  ***************************************************************/
 async function main(){
-  // 1) 加载关键词
+  // 1) 关键词
   const keywordRaw= await parseCSV(KEYWORD_CSV_URL);
   const longData= convertWideToLong(keywordRaw.data);
   const { weeks, groups }= processLongRows(longData);
   labelsAll= weeks;
-  groupsData= groups;       // 当前显示
-  globalGroupsRaw= groups;  // 原始数据
+  // 原始groups => globalGroupsRaw, 供搜索
+  globalGroupsRaw= groups;
+  // 当前 => 一开始就等于原始
+  groupsData= groups;
 
   // 2) 平均气温
   const avgRaw= await parseCSV(AVG_TEMP_CSV_URL);
@@ -693,7 +704,7 @@ document.getElementById("globalNoneBtn").addEventListener("click",()=>{
   setAllCheck(false);
 });
 
-// (搜索) 监听输入 & 清除
+// 搜索
 document.getElementById("searchInput").addEventListener("input",(e)=>{
   applySearchFilter(e.target.value);
 });
@@ -705,4 +716,3 @@ document.getElementById("btnClearSearch").addEventListener("click",()=>{
 </script>
 </body>
 </html>
-
